@@ -1,0 +1,4 @@
+.idea/
+*.iml
+*.so
+aws_kms_pkcs11_test
