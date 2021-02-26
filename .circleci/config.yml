@@ -26,10 +26,40 @@ jobs:
             - ~/aws-sdk-cpp
       - run:
           command: make
+      - run:
+          command: mkdir artifacts && cp aws_kms_pkcs11.so artifacts/
       - store_artifacts:
-          path: aws_kms_pkcs11.so
+          path: artifacts
+      - persist_to_workspace:
+          root: artifacts
+          paths:
+            - aws_kms_pkcs11.so
+
+  publish-github-release:
+    docker:
+      - image: cibuilds/github:0.10
+    steps:
+      - attach_workspace:
+          at: ./artifacts
+      - run:
+          name: "Publish Release on GitHub"
+          command: |
+            VERSION=$(echo "${CIRCLE_TAG}" | sed 's/^v//')
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./artifacts/
 
 workflows:
   build:
     jobs:
-      - build
+      - build:
+          filters:
+            tags:
+              only: /.*/
+      - publish-github-release:
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+
