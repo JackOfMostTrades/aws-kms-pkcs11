@@ -31,3 +31,11 @@ The following are options that can be set in `config.json`:
 | kms\_key\_id | Y | dbafb7de-106e-4277-97fe-a7f5635516a5 | The KMS key id to use. (This plugin does not support any sort of key listing, auto-discovery, or creation of keys.) |
 | aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses us-east-1 by default. |
 
+# Installation
+
+The easiest way to install the provider is to download the binary artifact from the GitHub releases page on this repository. Copy the `.so` to your pkcs11 directory (e.g. `/usr/lib/x86_64-linux-gnu/pkcs11`) and make sure to set it `chmod +x`. You should then create a config file as described above.
+
+# Building from source
+
+The Makefile in this repo assumes that you have built the AWS SDK with static libraries and installed it to `~/aws-sdk-cpp`. If so, then just running `make` should be sufficient. Check out the `[circleci config](.circleci/config.yml)` for pointers.
+
