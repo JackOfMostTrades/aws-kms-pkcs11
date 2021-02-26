@@ -251,7 +251,11 @@ CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication,
         return CKR_HOST_MEMORY;
     }
 
-    Aws::KMS::KMSClient kms;
+    Aws::Client::ClientConfiguration awsConfig;
+    if (aws_region != NULL) {
+        awsConfig.region = aws_region;
+    }
+    Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::GetPublicKeyRequest req;
     req.SetKeyId(kms_key_id);
     Aws::KMS::Model::GetPublicKeyOutcome res = kms.GetPublicKey(req);
@@ -648,7 +652,11 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
             return CKR_ARGUMENTS_BAD;
     }
 
-    Aws::KMS::KMSClient kms;
+    Aws::Client::ClientConfiguration awsConfig;
+    if (aws_region != NULL) {
+        awsConfig.region = aws_region;
+    }
+    Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::SignOutcome res = kms.Sign(req);
     if (!res.IsSuccess()) {
         printf("Error signing: %s\n", res.GetError().GetMessage().c_str());

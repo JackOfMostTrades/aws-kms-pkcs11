@@ -19,3 +19,8 @@ aws_kms_pkcs11.so: aws_kms_pkcs11.cpp
 	    $(HOME)/aws-sdk-cpp/lib/libaws-cpp-sdk-kms.a \
 	    -Wl,--no-whole-archive -lcrypto -ljson-c -lcurl
 
+install: aws_kms_pkcs11.so
+	cp aws_kms_pkcs11.so /usr/lib/x86_64-linux-gnu/pkcs11/
+
+uninstall:
+	rm -f /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
