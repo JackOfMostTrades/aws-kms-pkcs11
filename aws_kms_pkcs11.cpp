@@ -217,6 +217,7 @@ CK_RV C_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo) {
     }
 
     memset(pInfo, 0, sizeof(*pInfo));
+    pInfo->flags = CKF_TOKEN_PRESENT;
     return CKR_OK;
 }
 

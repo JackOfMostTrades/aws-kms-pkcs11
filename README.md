@@ -4,7 +4,22 @@ This repository contains a PKCS#11 implementation that uses AWS KMS as its backe
 
 This implementation is not meant to be complete; it only implements enough of the PKCS#11 interface to enable signing with keys previously created in KMS. Functionality such as creating new keys and listing keys is not supported (you must set the key ID you want to use explicitly as noted in the configuration section below).
 
-## Example
+# Examples
+
+## Windows code signing
+
+Using [osslsigncode](https://github.com/mtrojnar/osslsigncode):
+
+```bash
+osslsigncode sign -h sha256 \
+    -pkcs11engine /usr/lib/x86_64-linux-gnu/engines-1.1/pkcs11.so \
+    -pkcs11module /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so \
+    -certs mycert.pem -key 'pkcs11:' -in ~/foo.exe -out ~/foo-signed.exe
+```
+
+## SSH
+
+I'm not really sure why you'd want to do this, but you can!
 
 ```bash
 ~$ ssh-add -s /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so 
@@ -37,5 +52,5 @@ The easiest way to install the provider is to download the binary artifact from 
 
 # Building from source
 
-The Makefile in this repo assumes that you have built the AWS SDK with static libraries and installed it to `~/aws-sdk-cpp`. If so, then just running `make` should be sufficient. Check out the `[circleci config](.circleci/config.yml)` for pointers.
+The Makefile in this repo assumes that you have built the AWS SDK with static libraries and installed it to `~/aws-sdk-cpp`. If so, then just running `make` should be sufficient. Check out the [circleci config](.circleci/config.yml) for pointers.
 
