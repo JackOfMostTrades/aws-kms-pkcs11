@@ -1,0 +1,35 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - run:
+          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev uuid-dev zlib1g-dev libpulse-dev libopencryptoki-dev libjson-c-dev
+      - restore_cache:
+          key: aws-sdk-cpp-1.8.150
+      - run:
+          command: |
+            if [[ ! -e ~/aws-sdk-cpp ]]; then
+                curl -o ~/aws-sdk-cpp.tar.gz -L https://github.com/aws/aws-sdk-cpp/archive/1.8.150.tar.gz
+                [[ "YHruXDZ/CEKxgXXn5t8I7brILtSDzLNNXuvZ5qep0+Q=" == $(openssl dgst -sha256 -binary < ~/aws-sdk-cpp.tar.gz  | openssl enc -base64) ]] || exit 1
+                mkdir ~/aws-sdk-cpp-src
+                tar -C ~/aws-sdk-cpp-src --strip-components=1 -zxf ~/aws-sdk-cpp.tar.gz
+                mkdir ~/aws-sdk-cpp-src/sdk_build
+                cd ~/aws-sdk-cpp-src/sdk_build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY=kms -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/aws-sdk-cpp -DBUILD_SHARED_LIBS=OFF && make && make install
+            fi
+      - save_cache:
+          key: aws-sdk-cpp-1.8.150
+          paths:
+            - ~/aws-sdk-cpp
+      - run:
+          command: make
+      - store_artifacts:
+          path: aws_kms_pkcs11.so
+
+workflows:
+  build:
+    jobs:
+      - build
