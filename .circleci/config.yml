@@ -7,7 +7,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev uuid-dev zlib1g-dev libpulse-dev libopencryptoki-dev libjson-c-dev
+          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev uuid-dev zlib1g-dev libpulse-dev libengine-pkcs11-openssl libopencryptoki-dev libjson-c-dev
       - restore_cache:
           key: aws-sdk-cpp-1.8.150
       - run:
