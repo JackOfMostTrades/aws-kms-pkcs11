@@ -99,10 +99,11 @@ static CK_RV load_config() {
         if (paths[i] == NULL) {
             continue;
         }
-        debug("Attempting to loading config from path: %s", paths[i]);
+        debug("Attempting to load config from path: %s", paths[i]);
 
         FILE* f = fopen(paths[i], "r");
         if (f == NULL) {
+            debug("Skipping config because we couldn't open the file.");
             continue;
         }
 
