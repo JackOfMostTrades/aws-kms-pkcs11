@@ -35,7 +35,7 @@ Last login: Thu Nov 19 10:35:42 2020
 ~$
 ```
 
-## Configuration
+# Configuration
 
 AWS credentials are pulled from the usual places (environment variables, ~/.aws/credentials, and IMDS). Further configuration is read from either `/etc/aws-kms-pkcs11/config.json` or `$XDG_CONFIG_HOME/aws-kms-pkcs11/config.json` (note that `XDG_CONFIG_HOME=$HOME/.config` by default).
 
@@ -45,6 +45,8 @@ The following are options that can be set in `config.json`:
 | --- | --- | --- | --- |
 | kms\_key\_id | Y | dbafb7de-106e-4277-97fe-a7f5635516a5 | The KMS key id to use. (This plugin does not support any sort of key listing, auto-discovery, or creation of keys.) |
 | aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses us-east-1 by default. |
+
+If you are encountering errors using this provider, try setting the `AWS_KMS_PKCS11_DEBUG` environment variable to a non-empty value. This should enable debug logging to stdout from the module.
 
 # Installation
 

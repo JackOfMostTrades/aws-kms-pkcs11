@@ -15,9 +15,30 @@
 static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
 static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
+static bool debug_enabled = CK_FALSE;
 static json_object* config = NULL;
 static char* aws_region = NULL;
 static char* kms_key_id = NULL;
+
+static void inline debug(const char *fmt, ...) {
+    va_list args;
+
+    if (!debug_enabled) {
+        return;
+    }
+
+    char* longer_fmt = (char*)malloc(strlen(fmt)+11);
+    strcpy(longer_fmt, "AWS_KMS: ");
+    strcpy(longer_fmt+9, fmt);
+    longer_fmt[strlen(fmt)+9] = '\n';
+    longer_fmt[strlen(fmt)+10] = '\0';
+
+    va_start(args, fmt);
+    vprintf(longer_fmt, args);
+    va_end(args);
+
+    free(longer_fmt);
+}
 
 // Returns the configuration value for the given key. The returned string does not need to be freed as it is owned by
 // the configuration instance. However, any strings returned will be freed when C_Finalize is called, so if something
@@ -78,6 +99,8 @@ static CK_RV load_config() {
         if (paths[i] == NULL) {
             continue;
         }
+        debug("Attempting to loading config from path: %s", paths[i]);
+
         FILE* f = fopen(paths[i], "r");
         if (f == NULL) {
             continue;
@@ -114,6 +137,8 @@ static CK_RV load_config() {
                 }
             }
             json_object_put(conf);
+        } else {
+            debug("Failed to parse config: %s", paths[i]);
         }
     }
 
@@ -142,8 +167,18 @@ typedef struct _session {
 } CkSession;
 
 CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
+    debug_enabled = CK_FALSE;
+    const char* debug_env_var = getenv("AWS_KMS_PKCS11_DEBUG");
+    if (debug_env_var != NULL) {
+        if (strlen(debug_env_var) > 0) {
+            debug_enabled = CK_TRUE;
+            debug("Debug enabled.");
+        }
+    }
+
     CK_RV res = load_config();
     if (res != CKR_OK) {
+        debug("Failed to load config.");
         return res;
     }
 
@@ -158,6 +193,13 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
         aws_region = strdup(val);
     }
 
+    debug("Configured to use AWS key: %s", kms_key_id);
+    if (aws_region == NULL) {
+        debug("No AWS region configured; using default AWS region.");
+    } else {
+        debug("Configured to use AWS region: %s", aws_region);
+    }
+
     Aws::SDKOptions options;
     Aws::InitAPI(options);
 
@@ -165,6 +207,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 }
 
 CK_RV C_Finalize(CK_VOID_PTR pReserved) {
+    debug("Cleaning PKCS#11 provider.");
+
     Aws::SDKOptions options;
     Aws::ShutdownAPI(options);
 
@@ -261,8 +305,10 @@ CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication,
     req.SetKeyId(kms_key_id);
     Aws::KMS::Model::GetPublicKeyOutcome res = kms.GetPublicKey(req);
     if (!res.IsSuccess()) {
+        debug("Got error from AWS fetching public key: %s", res.GetError().GetMessage().c_str());
         return CKR_FUNCTION_FAILED;
     } else {
+        debug("Successfully fetched public key data.");
         Aws::KMS::Model::GetPublicKeyResult result = res.GetResult();
         session->key_data = new std::vector<Aws::KMS::Model::GetPublicKeyResult>();
         session->key_data->push_back(result);
@@ -660,8 +706,10 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
     Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::SignOutcome res = kms.Sign(req);
     if (!res.IsSuccess()) {
-        printf("Error signing: %s\n", res.GetError().GetMessage().c_str());
+        debug("Error signing: %s", res.GetError().GetMessage().c_str());
         return CKR_FUNCTION_FAILED;
+    } else {
+        debug("Successfully called KMS to do a signing operation.");
     }
     Aws::KMS::Model::SignResult response = res.GetResult();
 

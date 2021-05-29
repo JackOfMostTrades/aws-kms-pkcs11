@@ -4,7 +4,7 @@ clean:
 	rm -f aws_kms_pkcs11.so aws_kms_pkcs11_test aws_kms_client_test
 
 test: aws_kms_pkcs11_test
-	./aws_kms_pkcs11_test
+	AWS_KMS_PKCS11_DEBUG=1 ./aws_kms_pkcs11_test
 
 aws_kms_pkcs11_test: aws_kms_pkcs11_test.c aws_kms_pkcs11.so
 	gcc -g -Wall -I /usr/include/opencryptoki aws_kms_pkcs11_test.c -o aws_kms_pkcs11_test -ldl
