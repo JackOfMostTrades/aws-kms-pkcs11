@@ -9,8 +9,8 @@ test: aws_kms_pkcs11_test
 aws_kms_pkcs11_test: aws_kms_pkcs11_test.c aws_kms_pkcs11.so
 	gcc -g -Wall -I /usr/include/opencryptoki aws_kms_pkcs11_test.c -o aws_kms_pkcs11_test -ldl
 
-aws_kms_pkcs11.so: aws_kms_pkcs11.cpp
-	g++ -shared -fPIC -Wall -I /usr/include/opencryptoki -I$(HOME)/aws-sdk-cpp/include -fno-exceptions -std=c++11 aws_kms_pkcs11.cpp -o aws_kms_pkcs11.so \
+aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp
+	g++ -shared -fPIC -Wall -I /usr/include/opencryptoki -I$(HOME)/aws-sdk-cpp/include -fno-exceptions -std=c++11 aws_kms_pkcs11.cpp unsupported.cpp -o aws_kms_pkcs11.so \
 	    -Wl,--whole-archive \
 	    $(HOME)/aws-sdk-cpp/lib/libaws-checksums.a \
 	    $(HOME)/aws-sdk-cpp/lib/libaws-c-common.a \
