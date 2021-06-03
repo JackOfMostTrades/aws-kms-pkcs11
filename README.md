@@ -6,6 +6,53 @@ This implementation is not meant to be complete; it only implements enough of th
 
 # Examples
 
+## Use with libp11 (aka libengine-pkcs11-openssl)
+
+Note that this PKCS#11 provider allows for use of private keys without a "PIN". Previous versions of libp11 [did not allow](https://github.com/OpenSC/libp11/issues/242) the use of such keys. In particular, this version of libp11 is present in version of Ubuntu before focal, so make sure you are using libp11 >= 0.4.10.
+
+You can do some simple verification of this module with the pkcs11 engine by following this example:
+
+```
+AWS_KMS_PKCS11_DEBUG=1 openssl
+OpenSSL> engine pkcs11 -pre VERBOSE -pre MODULE_PATH:/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
+(pkcs11) pkcs11 engine
+[Success]: VERBOSE
+[Success]: MODULE_PATH:/build/aws-kms-pkcs11/aws_kms_pkcs11.so
+OpenSSL>
+OpenSSL> pkeyutl -engine pkcs11 -sign -inkey pkcs11: -keyform engine -out foo.sig -in foo
+engine "pkcs11" set.
+PKCS#11: Initializing the engine
+AWS_KMS: Debug enabled.
+AWS_KMS: Attempting to load config from path: /etc/aws-kms-pkcs11/config.json
+AWS_KMS: Attempting to load config from path: /root/.config/aws-kms-pkcs11/config.json
+AWS_KMS: Skipping config because we couldn't open the file.
+AWS_KMS: Configured to use AWS key: 8e6426ad-dbd5-4b86-8446-b8adc503904c
+AWS_KMS: Configured to use AWS region: us-west-1
+Found 1 slot
+Loading private key "pkcs11:"
+Looking in slot -1 for key:
+[0]                            no pin            (no label)
+Found slot:
+Found token:
+AWS_KMS: Successfully fetched public key data.
+Found 1 private key:
+AWS_KMS: Successfully called KMS to do a signing operation.
+```
+
+## Generate a self-signed certificate
+
+This will create a self-signed certificate in `mycert.pem` using your KMS key.
+
+```
+$ CONFIG="
+[req]                                                                           
+distinguished_name=dn
+[ dn ]
+"
+
+$ PKCS11_MODULE_PATH=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so openssl req -config <(echo "$CONFIG") -x509 -key pkcs11: -keyform engine -engine pkcs11 -out mycert.pem -subj '/CN=mycert' -days 366 -addext basicConstraints=critical,CA:FALSE
+```
+
 ## Windows code signing
 
 Using [osslsigncode](https://github.com/mtrojnar/osslsigncode):
@@ -15,6 +62,14 @@ osslsigncode sign -h sha256 \
     -pkcs11engine /usr/lib/x86_64-linux-gnu/engines-1.1/pkcs11.so \
     -pkcs11module /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so \
     -certs mycert.pem -key 'pkcs11:' -in ~/foo.exe -out ~/foo-signed.exe
+```
+
+## Signing RAUC bundles
+
+Since [RAUC](https://github.com/rauc/rauc) supports PKCS#11 keys, you can use your KMS key to sign RAUC bundles.
+
+```bash
+RAUC_PKCS11_MODULE=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so rauc bundle --cert=mycert.pem --key='pkcs11:' input_dir/ my_bundle.raucb
 ```
 
 ## SSH
