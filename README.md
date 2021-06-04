@@ -12,8 +12,10 @@ This module exposes KMS keys under a single token and slot. You can configure th
 
 ```
 export PKCS11_MODULE_PATH=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
-openssl pkeyutl -engine pkcs11 -sign -inkey pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5 -keyform engine -out foo.sig -in foo
+openssl pkeyutl -engine pkcs11 -sign -inkey pkcs11:token=my-signing-key -keyform engine -out foo.sig -in foo
 ```
+
+The token label used in the URI should match the label used in the configuration (see below). If you have not specified a label then the first 32 characters of the key's ID will be used as the label.
 
 ## Use with libp11 (aka libengine-pkcs11-openssl)
 
@@ -28,29 +30,22 @@ OpenSSL> engine pkcs11 -pre VERBOSE -pre MODULE_PATH:/usr/lib/x86_64-linux-gnu/p
 [Success]: VERBOSE
 [Success]: MODULE_PATH:/build/aws-kms-pkcs11/aws_kms_pkcs11.so
 OpenSSL>
-OpenSSL> pkeyutl -engine pkcs11 -sign -inkey pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5 -keyform engine -out foo.sig -in foo       
+OpenSSL> pkeyutl -engine pkcs11 -sign -inkey pkcs11:token=my-signing-key -keyform engine -out foo.sig -in foo
 engine "pkcs11" set.
 PKCS#11: Initializing the engine
 AWS_KMS: Debug enabled.
-AWS_KMS: Attempting to load config from path: /etc/aws-kms-pkcs11/config.json
-AWS_KMS: Skipping config because we couldn't open the file.
 AWS_KMS: Attempting to load config from path: /home/ihaken/.config/aws-kms-pkcs11/config.json
-AWS_KMS: Configured to use AWS region: us-east-1
-AWS_KMS: Configured KMS key ids:
+AWS_KMS: Configured slots:
 AWS_KMS:   dbafb7de-106e-4277-97fe-a7f5635516a5
-AWS_KMS:   7c9885bd-0832-47c1-86b7-d15631f545d5
 Found 1 slot
-Loading private key "pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5"
-Looking in slot -1 for key: label=dbafb7de-106e-4277-97fe-a7f5635516a5
-[0]                            no pin            (no label)
+Loading private key "pkcs11:token=my-signing-key"
+Looking in slot -1 for key: 
+[0]                            no pin            (my-signing-key)
 Found slot:  
-Found token: 
+Found token: my-signing-key
 AWS_KMS: Getting public key for key dbafb7de-106e-4277-97fe-a7f5635516a5
 AWS_KMS: Successfully fetched public key data.
-AWS_KMS: Getting public key for key ae38096a-62a3-4644-a112-4e803373cdb0
-AWS_KMS: Got error from AWS fetching public key for key id ae38096a-62a3-4644-a112-4e803373cdb0: User: arn:aws:sts::867241597532:assumed-role/turtle_platform_security/ihaken@netflix.com is not authorized to perform: kms:GetPublicKey on resource: arn:aws:kms:us-east-1:867241597532:key/ae38096a-62a3-4644-a112-4e803373cdb0
 Found 1 private key:
-   1 P  id=64626166623764652d313036652d343237372d393766652d613766353633353531366135 label=dbafb7de-106e-4277-97fe-a7f5635516a5
 AWS_KMS: Successfully called KMS to do a signing operation.
 ```
 
@@ -65,7 +60,7 @@ distinguished_name=dn
 [ dn ]
 "
 
-$ PKCS11_MODULE_PATH=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so openssl req -config <(echo "$CONFIG") -x509 -key pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5 -keyform engine -engine pkcs11 -out mycert.pem -subj '/CN=mycert' -days 366 -addext basicConstraints=critical,CA:FALSE
+$ PKCS11_MODULE_PATH=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so openssl req -config <(echo "$CONFIG") -x509 -key pkcs11:token=my-signing-key -keyform engine -engine pkcs11 -out mycert.pem -subj '/CN=mycert' -days 366 -addext basicConstraints=critical,CA:FALSE
 ```
 
 ## Windows code signing
@@ -76,7 +71,7 @@ Using [osslsigncode](https://github.com/mtrojnar/osslsigncode):
 osslsigncode sign -h sha256 \
     -pkcs11engine /usr/lib/x86_64-linux-gnu/engines-1.1/pkcs11.so \
     -pkcs11module /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so \
-    -certs mycert.pem -key 'pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5' -in ~/foo.exe -out ~/foo-signed.exe
+    -certs mycert.pem -key 'pkcs11:token=my-signing-key' -in ~/foo.exe -out ~/foo-signed.exe
 ```
 
 ## Signing RAUC bundles
@@ -84,7 +79,7 @@ osslsigncode sign -h sha256 \
 Since [RAUC](https://github.com/rauc/rauc) supports PKCS#11 keys, you can use your KMS key to sign RAUC bundles.
 
 ```bash
-RAUC_PKCS11_MODULE=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so rauc bundle --cert=mycert.pem --key='pkcs11:object=dbafb7de-106e-4277-97fe-a7f5635516a5' input_dir/ my_bundle.raucb
+RAUC_PKCS11_MODULE=/usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so rauc bundle --cert=mycert.pem --key='pkcs11:token=my-signing-key' input_dir/ my_bundle.raucb
 ```
 
 ## SSH
@@ -109,12 +104,29 @@ Last login: Thu Nov 19 10:35:42 2020
 
 AWS credentials are pulled from the usual places (environment variables, ~/.aws/credentials, and IMDS). Further configuration is read from either `/etc/aws-kms-pkcs11/config.json` or `$XDG_CONFIG_HOME/aws-kms-pkcs11/config.json` (note that `XDG_CONFIG_HOME=$HOME/.config` by default).
 
-The following are options that can be set in `config.json`:
+If you do not create any configuration, the module will list all KMS keys and make them available as "tokens" in the provider. The label on each token will be the first 32 characters of the key's ID. All requests will use the default AWS region.
+
+The following is an example configuration file:
+
+```
+{
+  "slots": [
+    {
+      "label": "my-signing-key",
+      "kms_key_id": "dbafb7de-106e-4277-97fe-a7f5635516a5",
+      "aws_region": "us-east-1"
+    }
+  ]
+}
+```
+
+The `slots` key is the only supported top-level attribute at the moment. This is a list of slot objects. The following keys are supported on each slot:
 
 | Key | Required | Example | Explanation |
 | --- | --- | --- | --- |
-| kms\_key\_ids | N | ["dbafb7de-106e-4277-97fe-a7f5635516a5",7c9885bd-0832-47c1-86b7-d15631f545d5"] | An array of key ids to make available via this provider. If not specified, an API call will be made during initialization to list all keys available in KMS. This is generally discouraged since most consumers of PKCS#11 modules will enumerate all keys which in turn requires making a call to AWS for every key to fetch its public key. |
-| aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses us-east-1 by default. |
+| kms\_key\_id | Y | dbafb7de-106e-4277-97fe-a7f5635516a5 | The key id to use for this slot. |
+| label | N | my-signing-key | The token label to use for this slot; this is usually used when using a PKCS#11 URI. If not specified, the first 32 characters of the KMS key ID will be used as a label. |
+| aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses the AWS default if not specified. |
 
 If you are encountering errors using this provider, try setting the `AWS_KMS_PKCS11_DEBUG` environment variable to a non-empty value. This should enable debug logging to stdout from the module.
 
