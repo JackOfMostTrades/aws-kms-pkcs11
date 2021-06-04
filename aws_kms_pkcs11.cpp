@@ -5,11 +5,15 @@
 #include <openssl/x509.h>
 #include <pkcs11.h>
 #include <json-c/json.h>
+#include <map>
+#include <optional>
+#include <vector>
 
 #include <aws/core/Aws.h>
 #include <aws/core/utils/base64/Base64.h>
 #include <aws/kms/KMSClient.h>
 #include <aws/kms/model/GetPublicKeyRequest.h>
+#include <aws/kms/model/ListKeysRequest.h>
 #include <aws/kms/model/SignRequest.h>
 
 #include "unsupported.h"
@@ -17,10 +21,16 @@
 static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
 static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
+using std::map;
+using std::optional;
+using std::string;
+using std::vector;
+
 static bool debug_enabled = CK_FALSE;
 static json_object* config = NULL;
 static char* aws_region = NULL;
-static char* kms_key_id = NULL;
+static map<string, optional<Aws::KMS::Model::GetPublicKeyResult>>* public_key_data = NULL;
+static vector<string>* kms_key_ids = NULL;
 
 static void inline debug(const char *fmt, ...) {
     va_list args;
@@ -127,6 +137,8 @@ static CK_RV load_config() {
             goto cleanup;
         }
 
+        json_bool has_key = false;
+        struct json_object* array = NULL;
         struct json_tokener* tok = json_tokener_new();
         struct json_object* conf = json_tokener_parse_ex(tok, buffer, file_size);
         json_tokener_free(tok);
@@ -136,6 +148,18 @@ static CK_RV load_config() {
                 json_object_object_foreach(conf, key, val) {
                     if (json_object_is_type(val, json_type_string)) {
                         json_object_object_add(config, key, json_object_new_string(json_object_get_string(val)));
+                    } else if (json_object_is_type(val, json_type_array)) {
+                        has_key = json_object_object_get_ex(config, key, &array);
+                        if (!has_key) {
+                            array = json_object_new_array();
+                            json_object_object_add(config, key, array);
+                        }
+                        for (size_t i = 0; i < json_object_array_length(val); i++) {
+                            struct json_object* v = json_object_array_get_idx(val, i);
+                            json_object_get(v);
+                            json_object_array_add(array, v);
+                        }
+                        array = NULL;
                     }
                 }
             }
@@ -163,7 +187,6 @@ typedef struct _session {
     CK_ATTRIBUTE_PTR find_objects_template;
     CK_ULONG find_objects_template_count;
     unsigned long find_objects_index;
-    std::vector<Aws::KMS::Model::GetPublicKeyResult> *key_data;
 
     unsigned long sign_key_index;
     CK_MECHANISM_TYPE sign_mechanism;
@@ -179,32 +202,82 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
         }
     }
 
+    Aws::SDKOptions options;
+    Aws::InitAPI(options);
+
     CK_RV res = load_config();
     if (res != CKR_OK) {
         debug("Failed to load config.");
         return res;
     }
 
+    public_key_data = new map<string, optional<Aws::KMS::Model::GetPublicKeyResult>>();
+    kms_key_ids = new vector<string>();
     const char* val;
     if ((val = get_config("kms_key_id")) != NULL) {
-        kms_key_id = strdup(val);
-    } else {
-        C_Finalize(NULL_PTR);
-        return CKR_ARGUMENTS_BAD;
+        kms_key_ids->push_back(string(val));
     }
     if ((val = get_config("aws_region")) != NULL) {
         aws_region = strdup(val);
     }
 
-    debug("Configured to use AWS key: %s", kms_key_id);
     if (aws_region == NULL) {
         debug("No AWS region configured; using default AWS region.");
     } else {
         debug("Configured to use AWS region: %s", aws_region);
     }
 
-    Aws::SDKOptions options;
-    Aws::InitAPI(options);
+    struct json_object* configured_keys;
+    json_bool has_key = false;
+    has_key = json_object_object_get_ex(config, "kms_key_ids", &configured_keys);
+    if (has_key && json_object_is_type(configured_keys, json_type_array)) {
+        for (size_t i = 0; i < json_object_array_length(configured_keys); i++) {
+            struct json_object* v = json_object_array_get_idx(configured_keys, i);
+            if (json_object_is_type(v, json_type_string)) {
+                kms_key_ids->push_back(string(json_object_get_string(v)));
+            }
+        }
+    }
+
+    if (kms_key_ids->size() == 0) {
+        debug("No KMS key ids configured; listing all keys.");
+        Aws::Client::ClientConfiguration awsConfig;
+        if (aws_region != NULL) {
+            awsConfig.region = aws_region;
+        }
+        Aws::KMS::KMSClient kms(awsConfig);
+        Aws::KMS::Model::ListKeysRequest req;
+        req.SetLimit(1000);
+        bool has_more = true;
+        while (has_more) {
+            Aws::KMS::Model::ListKeysOutcome res = kms.ListKeys(req);
+            if (!res.IsSuccess()) {
+                debug("Got error from AWS list keys: %s", res.GetError().GetMessage().c_str());
+                C_Finalize(NULL_PTR);
+                return CKR_FUNCTION_FAILED;
+            }
+
+            for (size_t i = 0; i < res.GetResult().GetKeys().size(); i++) {
+                kms_key_ids->push_back(res.GetResult().GetKeys().at(i).GetKeyId());
+            }
+
+            has_more = res.GetResult().GetTruncated();
+            if (has_more) {
+                req.SetMarker(res.GetResult().GetNextMarker());
+            }
+        }
+    }
+
+    if (kms_key_ids->size() == 0) {
+        debug("No KMS keys were configured and none were listed.");
+        C_Finalize(NULL_PTR);
+        return CKR_FUNCTION_FAILED;
+    }
+
+    debug("Configured KMS key ids:");
+    for (size_t i = 0; i < kms_key_ids->size(); i++) {
+        debug("  %s", kms_key_ids->at(i).c_str());
+    }
 
     return CKR_OK;
 }
@@ -215,9 +288,13 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
     Aws::SDKOptions options;
     Aws::ShutdownAPI(options);
 
-    if (kms_key_id != NULL) {
-        free(kms_key_id);
-        kms_key_id = NULL;
+    if (kms_key_ids != NULL) {
+        delete kms_key_ids;
+        kms_key_ids = NULL;
+    }
+    if (public_key_data != NULL) {
+        delete public_key_data;
+        public_key_data = NULL;
     }
     if (aws_region != NULL) {
         free(aws_region);
@@ -289,14 +366,9 @@ CK_RV C_Logout(CK_SESSION_HANDLE hSession) {
     return CKR_OK;
 }
 
-CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication, CK_NOTIFY notify, CK_SESSION_HANDLE_PTR phSession) {
-    if (slotID != 0) {
-        return CKR_SLOT_ID_INVALID;
-    }
-
-    CkSession* session = (CkSession*)malloc(sizeof(CkSession));
-    if (session == NULL) {
-        return CKR_HOST_MEMORY;
+optional<Aws::KMS::Model::GetPublicKeyResult> get_public_key_data(string key_id) {
+    if (public_key_data->count(key_id) > 0) {
+        return public_key_data->at(key_id);
     }
 
     Aws::Client::ClientConfiguration awsConfig;
@@ -305,16 +377,30 @@ CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication,
     }
     Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::GetPublicKeyRequest req;
-    req.SetKeyId(kms_key_id);
+
+    debug("Getting public key for key %s", key_id.c_str());
+    req.SetKeyId(key_id);
     Aws::KMS::Model::GetPublicKeyOutcome res = kms.GetPublicKey(req);
+    optional<Aws::KMS::Model::GetPublicKeyResult> optRes;
     if (!res.IsSuccess()) {
-        debug("Got error from AWS fetching public key: %s", res.GetError().GetMessage().c_str());
-        return CKR_FUNCTION_FAILED;
+        debug("Got error from AWS fetching public key for key id %s: %s", key_id.c_str(), res.GetError().GetMessage().c_str());
+        optRes = std::nullopt;
     } else {
         debug("Successfully fetched public key data.");
-        Aws::KMS::Model::GetPublicKeyResult result = res.GetResult();
-        session->key_data = new std::vector<Aws::KMS::Model::GetPublicKeyResult>();
-        session->key_data->push_back(result);
+        optRes = {res.GetResult()};
+    }
+    public_key_data->insert( std::pair<string, optional<Aws::KMS::Model::GetPublicKeyResult>>(key_id, optRes) );
+    return optRes;
+}
+
+CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication, CK_NOTIFY notify, CK_SESSION_HANDLE_PTR phSession) {
+    if (slotID != 0) {
+        return CKR_SLOT_ID_INVALID;
+    }
+
+    CkSession* session = (CkSession*)malloc(sizeof(CkSession));
+    if (session == NULL) {
+        return CKR_HOST_MEMORY;
     }
 
     *phSession = (CK_SESSION_HANDLE)session;
@@ -326,10 +412,6 @@ CK_RV C_CloseSession(CK_SESSION_HANDLE hSession) {
     if (session == NULL) {
         return CKR_SESSION_HANDLE_INVALID;
     }
-    if (session->key_data != NULL) {
-        delete session->key_data;
-        session->key_data = NULL;
-    }
     free(session);
     return CKR_OK;
 }
@@ -339,7 +421,7 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
-CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
+CK_RV getAttributeValue(string key_id, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
 
     unsigned char* buffer, *buffer2;
     EVP_PKEY* pkey;
@@ -350,14 +432,19 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
     size_t len, len2;
     ASN1_OCTET_STRING* os;
 
-    Aws::String key_id = key.GetKeyId();
-    const unsigned char* pubkey_bytes = key.GetPublicKey().GetUnderlyingData();
+    optional<Aws::KMS::Model::GetPublicKeyResult> key;
+    const unsigned char* pubkey_bytes;
 
     switch (attr) {
         case CKA_CLASS:
+            key = get_public_key_data(key_id);
             *pulValueLen = sizeof(CK_OBJECT_CLASS);
             if (pValue != NULL_PTR) {
-                *((CK_OBJECT_CLASS*)pValue) = CKO_PRIVATE_KEY;
+                if (key.has_value()) {
+                    *((CK_OBJECT_CLASS*)pValue) = CKO_PRIVATE_KEY;
+                } else {
+                    *((CK_OBJECT_CLASS*)pValue) = CKO_DATA;
+                }
             }
             break;
         case CKA_ID:
@@ -368,13 +455,22 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
             }
             break;
         case CKA_SIGN:
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
             *pulValueLen = sizeof(CK_BBOOL);
             if (pValue != NULL_PTR) {
                 *((CK_BBOOL*)pValue) = CK_TRUE;
             }
             break;
         case CKA_KEY_TYPE:
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
             if (pkey == NULL) {
                 return CKR_FUNCTION_FAILED;
             }
@@ -398,13 +494,22 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
             }
             break;
         case CKA_ALWAYS_AUTHENTICATE:
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
             *pulValueLen = sizeof(CK_BBOOL);
             if (pValue != NULL_PTR) {
                 *((CK_BBOOL*)pValue) = CK_FALSE;
             }
             break;
         case CKA_MODULUS:
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
             if (pkey == NULL) {
                 return CKR_FUNCTION_FAILED;
             }
@@ -421,7 +526,12 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
             }
             break;
         case CKA_PUBLIC_EXPONENT:
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
             if (pkey == NULL) {
                 return CKR_FUNCTION_FAILED;
             }
@@ -438,7 +548,12 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
             }
             break;
         case CKA_EC_POINT:
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
             if (pkey == NULL) {
                 return CKR_FUNCTION_FAILED;
             }
@@ -468,7 +583,12 @@ CK_RV getAttributeValue(Aws::KMS::Model::GetPublicKeyResult &key, CK_ATTRIBUTE_T
             EVP_PKEY_free(pkey);
             break;
         case CKA_EC_PARAMS:
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
+            key = get_public_key_data(key_id);
+            if (!key.has_value()) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
             if (pkey == NULL) {
                 return CKR_FUNCTION_FAILED;
             }
@@ -516,7 +636,7 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, 
     return CKR_OK;
 }
 
-static CK_BBOOL matches_template(CkSession* session, Aws::KMS::Model::GetPublicKeyResult &key) {
+static CK_BBOOL matches_template(CkSession* session, string key_id) {
     unsigned char* buffer = NULL;
     CK_ULONG buffer_size = 0;
     CK_RV res;
@@ -524,17 +644,8 @@ static CK_BBOOL matches_template(CkSession* session, Aws::KMS::Model::GetPublicK
     for (CK_ULONG i = 0; i < session->find_objects_template_count; i++) {
         CK_ATTRIBUTE attr = session->find_objects_template[i];
 
-        // Special case for CKA_CLASS because we want to match CKO_PUBLIC_KEY even though we have a CKO_PRIVATE_KEY
-        if (attr.type == CKA_CLASS) {
-            CK_OBJECT_CLASS clazz = *((CK_OBJECT_CLASS*)attr.pValue);
-            if (clazz != CKO_PUBLIC_KEY && clazz != CKO_PRIVATE_KEY) {
-                return CK_FALSE;
-            }
-            continue;
-        }
-
-        // Otherwise pull the real attribute value and check for a byte-array-equality on the value.
-        res = getAttributeValue(key, attr.type, NULL_PTR, &buffer_size);
+        // Pull the real attribute value
+        res = getAttributeValue(key_id, attr.type, NULL_PTR, &buffer_size);
         if (res != CKR_OK) {
             return res;
         }
@@ -545,13 +656,27 @@ static CK_BBOOL matches_template(CkSession* session, Aws::KMS::Model::GetPublicK
         if (buffer == NULL) {
             return CKR_HOST_MEMORY;
         }
-        res = getAttributeValue(key, attr.type, buffer, &buffer_size);
+        res = getAttributeValue(key_id, attr.type, buffer, &buffer_size);
         if (res != CKR_OK) {
             return res;
         }
+
+        // Special case for CKA_CLASS because we want to match CKO_PUBLIC_KEY even though we have a CKO_PRIVATE_KEY
+        if (attr.type == CKA_CLASS) {
+            CK_OBJECT_CLASS match = *((CK_OBJECT_CLASS*)attr.pValue);
+            CK_OBJECT_CLASS actual = *((CK_OBJECT_CLASS*)buffer);
+            if (match == CKO_PUBLIC_KEY && (actual == CKO_PUBLIC_KEY || actual == CKO_PRIVATE_KEY)) {
+                free(buffer);
+                continue;
+            }
+        }
+
+        // Otherwise require exact match
         if (memcmp(buffer, attr.pValue, buffer_size) != 0) {
+            free(buffer);
             return CK_FALSE;
         }
+        free(buffer);
     }
     return CK_TRUE;
 }
@@ -562,14 +687,15 @@ CK_RV C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR phObject, C
         return CKR_SESSION_HANDLE_INVALID;
     }
 
-    if (session->key_data->size() == 0) {
+    if (kms_key_ids->size() == 0) {
         *pulObjectCount = 0;
         return CKR_OK;
     }
 
     unsigned long foundObjects = 0;
-    while (foundObjects < ulMaxObjectCount && session->find_objects_index < session->key_data->size()) {
-        if (matches_template(session, session->key_data->at(session->find_objects_index))) {
+    while (foundObjects < ulMaxObjectCount && session->find_objects_index < kms_key_ids->size()) {
+        string key_id = kms_key_ids->at(session->find_objects_index);
+        if (matches_template(session, key_id)) {
             phObject[foundObjects] = session->find_objects_index;
             foundObjects += 1;
         }
@@ -606,13 +732,13 @@ CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject, 
         return CKR_ARGUMENTS_BAD;
     }
 
-    if (hObject >= session->key_data->size()) {
+    if (hObject >= kms_key_ids->size()) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
-    Aws::KMS::Model::GetPublicKeyResult key = session->key_data->at(hObject);
+    string key_id = kms_key_ids->at(hObject);
 
     for (CK_ULONG i = 0; i < ulCount; i++) {
-        CK_RV res = getAttributeValue(key, pTemplate[i].type, pTemplate[i].pValue, &pTemplate[i].ulValueLen);
+        CK_RV res = getAttributeValue(key_id, pTemplate[i].type, pTemplate[i].pValue, &pTemplate[i].ulValueLen);
         if (res != CKR_OK) {
             return res;
         }
@@ -628,7 +754,7 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJ
     if (pMechanism == NULL_PTR) {
         return CKR_ARGUMENTS_BAD;
     }
-    if (hKey >= session->key_data->size()) {
+    if (hKey >= kms_key_ids->size()) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
     session->sign_key_index = hKey;
@@ -656,13 +782,17 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
         return CKR_ARGUMENTS_BAD;
     }
 
-    Aws::KMS::Model::GetPublicKeyResult key = session->key_data->at(session->sign_key_index);
+    string key_id = kms_key_ids->at(session->sign_key_index);
+    optional<Aws::KMS::Model::GetPublicKeyResult> key = get_public_key_data(key_id);
+    if (!key.has_value()) {
+        return CKR_ARGUMENTS_BAD;
+    }
 
-    const unsigned char* pubkey_bytes = key.GetPublicKey().GetUnderlyingData();
     size_t sig_size;
-    EVP_PKEY* pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.GetPublicKey().GetLength());
     const EC_KEY* ec_key;
     const RSA* rsa;
+    const unsigned char* pubkey_bytes = key.value().GetPublicKey().GetUnderlyingData();
+    EVP_PKEY* pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key.value().GetPublicKey().GetLength());
 
     int key_type = EVP_PKEY_base_id(pkey);
     switch (key_type) {
@@ -688,7 +818,7 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
     }
 
     Aws::KMS::Model::SignRequest req;
-    req.SetKeyId(kms_key_id);
+    req.SetKeyId(key_id);
     req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
     req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
     switch (session->sign_mechanism) {

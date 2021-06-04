@@ -88,12 +88,27 @@ int main(int argc, char** argv) {
             break;
         }
 
+        CK_OBJECT_CLASS object_class;
         CK_OBJECT_CLASS key_type;
         CK_ATTRIBUTE attrs[1];
+
+        attrs[0].type = CKA_CLASS;
+        attrs[0].pValue = &object_class;
+        attrs[0].ulValueLen = 0;
+        CK_RV res = f->C_GetAttributeValue(session, obj, attrs, 1);
+        if (res != CKR_OK) {
+            printf("Fail C_GetAttributeValue for CKA_CLASS, res=%ld\n", res);
+            return 1;
+        }
+        if (object_class != CKO_PRIVATE_KEY) {
+            printf("Skipping object because it is not a private key.\n");
+            continue;
+        }
+
         attrs[0].type = CKA_KEY_TYPE;
         attrs[0].pValue = &key_type;
         attrs[0].ulValueLen = 0;
-        CK_RV res = f->C_GetAttributeValue(session, obj, attrs, 1);
+        res = f->C_GetAttributeValue(session, obj, attrs, 1);
         if (res != CKR_OK) {
             printf("Fail C_GetAttributeValue for CKA_KEY_TYPE, res=%ld\n", res);
             return 1;
