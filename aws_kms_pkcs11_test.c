@@ -77,7 +77,7 @@ CK_RV test_all_keys_in_slot(CK_FUNCTION_LIST* f, CK_SLOT_ID slotID) {
 
         attrs[0].type = CKA_CLASS;
         attrs[0].pValue = &object_class;
-        attrs[0].ulValueLen = 0;
+        attrs[0].ulValueLen = sizeof(CK_OBJECT_CLASS);
         CK_RV res = f->C_GetAttributeValue(session, obj, attrs, 1);
         if (res != CKR_OK) {
             printf("Fail C_GetAttributeValue for CKA_CLASS, res=%ld\n", res);
@@ -90,7 +90,7 @@ CK_RV test_all_keys_in_slot(CK_FUNCTION_LIST* f, CK_SLOT_ID slotID) {
 
         attrs[0].type = CKA_KEY_TYPE;
         attrs[0].pValue = &key_type;
-        attrs[0].ulValueLen = 0;
+        attrs[0].ulValueLen = sizeof(CK_OBJECT_CLASS);
         res = f->C_GetAttributeValue(session, obj, attrs, 1);
         if (res != CKR_OK) {
             printf("Fail C_GetAttributeValue for CKA_KEY_TYPE, res=%ld\n", res);

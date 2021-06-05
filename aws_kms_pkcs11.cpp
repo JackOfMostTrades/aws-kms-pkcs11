@@ -10,94 +10,26 @@
 #include <vector>
 
 #include <aws/core/Aws.h>
-#include <aws/core/utils/base64/Base64.h>
 #include <aws/kms/KMSClient.h>
-#include <aws/kms/model/GetPublicKeyRequest.h>
 #include <aws/kms/model/ListKeysRequest.h>
 #include <aws/kms/model/SignRequest.h>
 
+#include "attributes.h"
+#include "aws_kms_slot.h"
+#include "certificates.h"
+#include "debug.h"
 #include "unsupported.h"
-
-static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
-static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
 using std::string;
 using std::vector;
 
-static bool debug_enabled = CK_FALSE;
-static void inline debug(const char *fmt, ...) {
-    va_list args;
+static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
+static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
-    if (!debug_enabled) {
-        return;
-    }
-
-    char* longer_fmt = (char*)malloc(strlen(fmt)+11);
-    strcpy(longer_fmt, "AWS_KMS: ");
-    strcpy(longer_fmt+9, fmt);
-    longer_fmt[strlen(fmt)+9] = '\n';
-    longer_fmt[strlen(fmt)+10] = '\0';
-
-    va_start(args, fmt);
-    vprintf(longer_fmt, args);
-    va_end(args);
-
-    free(longer_fmt);
-}
-
-class AwsKmsSlot {
-private:
-    string label;
-    string aws_region;
-    string kms_key_id;
-    bool public_key_data_fetched;
-    Aws::Utils::ByteBuffer public_key_data;
-public:
-    AwsKmsSlot(string label, string kms_key_id, string aws_region);
-    string GetLabel();
-    string GetKmsKeyId();
-    string GetAwsRegion();
-    Aws::Utils::ByteBuffer GetPublicKeyData();
-};
-AwsKmsSlot::AwsKmsSlot(string label, string kms_key_id, string aws_region) {
-    this->label = label;
-    this->kms_key_id = kms_key_id;
-    this->aws_region = aws_region;
-    this->public_key_data_fetched = false;
-}
-string AwsKmsSlot::GetLabel() {
-    return this->label;
-}
-string AwsKmsSlot::GetAwsRegion() {
-    return this->aws_region;
-}
-string AwsKmsSlot::GetKmsKeyId() {
-    return this->kms_key_id;
-}
-Aws::Utils::ByteBuffer AwsKmsSlot::GetPublicKeyData() {
-    if (this->public_key_data_fetched) {
-        return this->public_key_data;
-    }
-    Aws::Client::ClientConfiguration awsConfig;
-    if (this->aws_region.length() > 0) {
-        awsConfig.region = this->aws_region;
-    }
-    Aws::KMS::KMSClient kms(awsConfig);
-    Aws::KMS::Model::GetPublicKeyRequest req;
-
-    debug("Getting public key for key %s", this->kms_key_id.c_str());
-    req.SetKeyId(this->kms_key_id);
-    Aws::KMS::Model::GetPublicKeyOutcome res = kms.GetPublicKey(req);
-    if (!res.IsSuccess()) {
-        debug("Got error from AWS fetching public key for key id %s: %s", this->kms_key_id.c_str(), res.GetError().GetMessage().c_str());
-        this->public_key_data = Aws::Utils::ByteBuffer();
-    } else {
-        debug("Successfully fetched public key data.");
-        this->public_key_data = res.GetResult().GetPublicKey();
-    }
-    this->public_key_data_fetched = true;
-    return this->public_key_data;
-}
+static const CK_OBJECT_HANDLE PRIVATE_KEY_HANDLE = 0;
+static const CK_OBJECT_HANDLE CERTIFICATE_HANDLE = 1;
+static const CK_OBJECT_HANDLE FIRST_OBJECT_HANDLE = PRIVATE_KEY_HANDLE;
+static const CK_OBJECT_HANDLE LAST_OBJECT_HANDLE = CERTIFICATE_HANDLE;
 
 typedef struct _session {
     CK_SLOT_ID slot_id;
@@ -206,6 +138,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
                 string label;
                 string kms_key_id;
                 string aws_region;
+                X509* certificate = NULL;
                 if (json_object_object_get_ex(slot_item, "label", &val) && json_object_is_type(val, json_type_string)) {
                     label = string(json_object_get_string(val));
                 }
@@ -215,7 +148,22 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
                 if (json_object_object_get_ex(slot_item, "aws_region", &val) && json_object_is_type(val, json_type_string)) {
                     kms_key_id = string(json_object_get_string(val));
                 }
-                slots->push_back(AwsKmsSlot(label, kms_key_id, aws_region));
+                if (json_object_object_get_ex(slot_item, "certificate", &val) && json_object_is_type(val, json_type_string)) {
+                    debug("Parsing certificate for slot: %s", label.c_str());
+                    certificate = parseCertificateFromB64Der(json_object_get_string(val));
+                    if (certificate == NULL) {
+                        debug("Failed to parse certificate for slot: %s", label.c_str());
+                    }
+                }
+                if (json_object_object_get_ex(slot_item, "certificate_path", &val) && json_object_is_type(val, json_type_string)) {
+                    const char* certificate_path = json_object_get_string(val);
+                    debug("Parsing certificate for slot %s from path %s", label.c_str(), certificate_path);
+                    certificate = parseCertificateFromFile(certificate_path);
+                    if (certificate == NULL) {
+                        debug("Failed to parse certificate_path for slot: %s", label.c_str());
+                    }
+                }
+                slots->push_back(AwsKmsSlot(label, kms_key_id, aws_region, certificate));
             }
         }
     }
@@ -237,7 +185,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
             }
 
             for (size_t i = 0; i < res.GetResult().GetKeys().size(); i++) {
-                slots->push_back(AwsKmsSlot(string(), res.GetResult().GetKeys().at(i).GetKeyId(), string()));
+                slots->push_back(AwsKmsSlot(string(), res.GetResult().GetKeys().at(i).GetKeyId(), string(), NULL));
             }
 
             has_more = res.GetResult().GetTruncated();
@@ -265,6 +213,14 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
     debug("Cleaning PKCS#11 provider.");
 
     if (slots != NULL) {
+        for (size_t i = 0; i < slots->size(); i++) {
+            AwsKmsSlot& slot = slots->at(i);
+            X509* cert = slot.GetCertificate();
+            if (cert != NULL) {
+                X509_free(cert);
+            }
+        }
+
         delete slots;
         slots = NULL;
     }
@@ -341,6 +297,7 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
     if (label_len > 32) {
         label_len = 32;
     }
+    memset(pInfo->label, ' ', 32);
     memcpy(pInfo->label, label.c_str(), label_len);
     return CKR_OK;
 }
@@ -397,206 +354,6 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
-CK_RV getAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
-
-    unsigned char* buffer, *buffer2;
-    EVP_PKEY* pkey;
-    const RSA* rsa;
-    const EC_KEY* ec_key;
-    const EC_GROUP* ec_group;
-    const BIGNUM* bn;
-    size_t len, len2;
-    ASN1_OCTET_STRING* os;
-
-    Aws::Utils::ByteBuffer key_data;
-    const unsigned char* pubkey_bytes;
-
-    switch (attr) {
-        case CKA_CLASS:
-            key_data = slot.GetPublicKeyData();
-            *pulValueLen = sizeof(CK_OBJECT_CLASS);
-            if (pValue != NULL_PTR) {
-                if (key_data.GetLength() > 0) {
-                    *((CK_OBJECT_CLASS*)pValue) = CKO_PRIVATE_KEY;
-                } else {
-                    *((CK_OBJECT_CLASS*)pValue) = CKO_DATA;
-                }
-            }
-            break;
-        case CKA_ID:
-        case CKA_LABEL:
-            *pulValueLen = slot.GetKmsKeyId().length();
-            if (pValue != NULL_PTR) {
-                memcpy(pValue, slot.GetKmsKeyId().c_str(), slot.GetKmsKeyId().length());
-            }
-            break;
-        case CKA_SIGN:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            *pulValueLen = sizeof(CK_BBOOL);
-            if (pValue != NULL_PTR) {
-                *((CK_BBOOL*)pValue) = CK_TRUE;
-            }
-            break;
-        case CKA_KEY_TYPE:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            pubkey_bytes = key_data.GetUnderlyingData();
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
-            if (pkey == NULL) {
-                return CKR_FUNCTION_FAILED;
-            }
-
-            CK_OBJECT_CLASS key_type;
-            switch (EVP_PKEY_base_id(pkey)) {
-                case EVP_PKEY_RSA:
-                    key_type = CKK_RSA;
-                    break;
-                case EVP_PKEY_EC:
-                    key_type = CKK_ECDSA;
-                    break;
-                default:
-                    EVP_PKEY_free(pkey);
-                    return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-
-            *pulValueLen = sizeof(CK_OBJECT_CLASS);
-            if (pValue != NULL_PTR) {
-                *((CK_OBJECT_CLASS*)pValue) = key_type;
-            }
-            EVP_PKEY_free(pkey);
-            break;
-        case CKA_ALWAYS_AUTHENTICATE:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            *pulValueLen = sizeof(CK_BBOOL);
-            if (pValue != NULL_PTR) {
-                *((CK_BBOOL*)pValue) = CK_FALSE;
-            }
-            break;
-        case CKA_MODULUS:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            pubkey_bytes = key_data.GetUnderlyingData();
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
-            if (pkey == NULL) {
-                return CKR_FUNCTION_FAILED;
-            }
-            if (EVP_PKEY_base_id(pkey) != EVP_PKEY_RSA) {
-                EVP_PKEY_free(pkey);
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            rsa = EVP_PKEY_get0_RSA(pkey);
-            bn = RSA_get0_n(rsa);
-
-            *pulValueLen = BN_num_bytes(bn);
-            if (pValue != NULL_PTR) {
-                BN_bn2bin(bn, (unsigned char*)pValue);
-            }
-            EVP_PKEY_free(pkey);
-            break;
-        case CKA_PUBLIC_EXPONENT:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            pubkey_bytes = key_data.GetUnderlyingData();
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
-            if (pkey == NULL) {
-                return CKR_FUNCTION_FAILED;
-            }
-            if (EVP_PKEY_base_id(pkey) != EVP_PKEY_RSA) {
-                EVP_PKEY_free(pkey);
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            rsa = EVP_PKEY_get0_RSA(pkey);
-            bn = RSA_get0_e(rsa);
-
-            *pulValueLen = BN_num_bytes(bn);
-            if (pValue != NULL_PTR) {
-                BN_bn2bin(bn, (unsigned char*)pValue);
-            }
-            EVP_PKEY_free(pkey);
-            break;
-        case CKA_EC_POINT:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            pubkey_bytes = key_data.GetUnderlyingData();
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
-            if (pkey == NULL) {
-                return CKR_FUNCTION_FAILED;
-            }
-            if (EVP_PKEY_base_id(pkey) != EVP_PKEY_EC) {
-                EVP_PKEY_free(pkey);
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            ec_key = EVP_PKEY_get0_EC_KEY(pkey);
-
-            buffer = NULL;
-            len = i2o_ECPublicKey(ec_key, &buffer);
-
-            // Wrap the point in an ASN.1 octet string
-            os = ASN1_STRING_new();
-            ASN1_OCTET_STRING_set(os, buffer, len);
-
-            buffer2 = NULL;
-            len2 = i2d_ASN1_OCTET_STRING(os, &buffer2);
-
-            *pulValueLen = len2;
-            if (pValue != NULL_PTR) {
-                memcpy(pValue, buffer2, len2);
-            }
-
-            ASN1_STRING_free(os);
-            free(buffer);
-            free(buffer2);
-            EVP_PKEY_free(pkey);
-            break;
-        case CKA_EC_PARAMS:
-            key_data = slot.GetPublicKeyData();
-            if (key_data.GetLength() == 0) {
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            pubkey_bytes = key_data.GetUnderlyingData();
-            pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
-            if (pkey == NULL) {
-                return CKR_FUNCTION_FAILED;
-            }
-            if (EVP_PKEY_base_id(pkey) != EVP_PKEY_EC) {
-                EVP_PKEY_free(pkey);
-                return CKR_ATTRIBUTE_TYPE_INVALID;
-            }
-            ec_key = EVP_PKEY_get0_EC_KEY(pkey);
-            ec_group = EC_KEY_get0_group(ec_key);
-
-            buffer = NULL;
-            len = i2d_ECPKParameters(ec_group, &buffer);
-
-            *pulValueLen = len;
-            if (pValue != NULL_PTR) {
-                memcpy(pValue, buffer, len);
-            }
-
-            free(buffer);
-            EVP_PKEY_free(pkey);
-            break;
-        default:
-            return CKR_ATTRIBUTE_TYPE_INVALID;
-    }
-
-    return CKR_OK;
-}
-
 CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount) {
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
@@ -616,7 +373,31 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, 
     return CKR_OK;
 }
 
-static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot) {
+static CK_BBOOL has_object(AwsKmsSlot& slot, CK_OBJECT_HANDLE idx) {
+    switch (idx) {
+        case PRIVATE_KEY_HANDLE:
+            return slot.GetPublicKeyData().GetLength() > 0;
+            break;
+        case CERTIFICATE_HANDLE:
+            return slot.GetCertificate() != NULL;
+            break;
+    }
+
+    return CK_FALSE;
+}
+
+static CK_RV getAttributeForObject(AwsKmsSlot& slot, CK_OBJECT_HANDLE idx, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
+    switch (idx) {
+        case PRIVATE_KEY_HANDLE:
+            return getKmsKeyAttributeValue(slot, attr, pValue, pulValueLen);
+        case CERTIFICATE_HANDLE:
+            return getCertificateAttributeValue(slot, attr, pValue, pulValueLen);
+    }
+
+    return CKR_OBJECT_HANDLE_INVALID;
+}
+
+static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT_HANDLE idx) {
     unsigned char* buffer = NULL;
     CK_ULONG buffer_size = 0;
     CK_RV res;
@@ -625,7 +406,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot) {
         CK_ATTRIBUTE attr = session->find_objects_template[i];
 
         // Pull the real attribute value
-        res = getAttributeValue(slot, attr.type, NULL_PTR, &buffer_size);
+        res = getAttributeForObject(slot, idx, attr.type, NULL_PTR, &buffer_size);
         if (res != CKR_OK) {
             return res;
         }
@@ -636,7 +417,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot) {
         if (buffer == NULL) {
             return CKR_HOST_MEMORY;
         }
-        res = getAttributeValue(slot, attr.type, buffer, &buffer_size);
+        res = getAttributeForObject(slot, idx, attr.type, buffer, &buffer_size);
         if (res != CKR_OK) {
             return res;
         }
@@ -668,19 +449,23 @@ CK_RV C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR phObject, C
     }
     AwsKmsSlot& slot = slots->at(session->slot_id);
 
-    if (ulMaxObjectCount == 0 || session->find_objects_index > 0) {
+    if (ulMaxObjectCount == 0 || session->find_objects_index > LAST_OBJECT_HANDLE) {
         *pulObjectCount = 0;
         return CKR_OK;
     }
 
-    if (matches_template(session, slot)) {
-        *pulObjectCount = 1;
-        phObject[0] = 0;
-    } else {
-        *pulObjectCount = 0;
+    size_t found_objects = 0;
+    while (found_objects < ulMaxObjectCount && session->find_objects_index <= LAST_OBJECT_HANDLE) {
+        if (has_object(slot, session->find_objects_index)) {
+            if (matches_template(session, slot, session->find_objects_index)) {
+                phObject[found_objects] = session->find_objects_index;
+                found_objects += 1;
+            }
+        }
+        session->find_objects_index += 1;
     }
-    session->find_objects_index += 1;
 
+    *pulObjectCount = found_objects;
     return CKR_OK;
 }
 
@@ -710,13 +495,16 @@ CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject, 
         return CKR_ARGUMENTS_BAD;
     }
 
-    if (hObject != 0) {
+    if (hObject < FIRST_OBJECT_HANDLE || hObject > LAST_OBJECT_HANDLE) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
     AwsKmsSlot& slot = slots->at(session->slot_id);
+    if (!has_object(slot, hObject)) {
+        return CKR_OBJECT_HANDLE_INVALID;
+    }
 
     for (CK_ULONG i = 0; i < ulCount; i++) {
-        CK_RV res = getAttributeValue(slot, pTemplate[i].type, pTemplate[i].pValue, &pTemplate[i].ulValueLen);
+        CK_RV res = getAttributeForObject(slot, hObject, pTemplate[i].type, pTemplate[i].pValue, &pTemplate[i].ulValueLen);
         if (res != CKR_OK) {
             return res;
         }
