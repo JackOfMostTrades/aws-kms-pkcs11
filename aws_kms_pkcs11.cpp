@@ -146,7 +146,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
                     kms_key_id = string(json_object_get_string(val));
                 }
                 if (json_object_object_get_ex(slot_item, "aws_region", &val) && json_object_is_type(val, json_type_string)) {
-                    kms_key_id = string(json_object_get_string(val));
+                    aws_region = string(json_object_get_string(val));
                 }
                 if (json_object_object_get_ex(slot_item, "certificate", &val) && json_object_is_type(val, json_type_string)) {
                     debug("Parsing certificate for slot: %s", label.c_str());
