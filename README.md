@@ -128,7 +128,7 @@ The `slots` key is the only supported top-level attribute at the moment. This is
 | kms\_key\_id | Y | dbafb7de-106e-4277-97fe-a7f5635516a5 | The key id to use for this slot. |
 | label | N | my-signing-key | The token label to use for this slot; this is usually used when using a PKCS#11 URI. If not specified, the first 32 characters of the KMS key ID will be used as a label. |
 | aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses the AWS default if not specified. |
-| certificate | N | MIIBMjCB2... | A base64-encoded DER-encoded X.509 certificate to make available as an object on this slot. This is useful for use-cases where a signing library expects both a certificate and key available on the PKCS#11 token. You can generate a certificate with this format with a command such as `openssl x509 -in mycert.pem -outform der | openssl base64 -A` |
+| certificate | N | MIIBMjCB2... | A base64-encoded DER-encoded X.509 certificate to make available as an object on this slot. This is useful for use-cases where a signing library expects both a certificate and key available on the PKCS#11 token. You can generate a certificate with this format with a command such as `openssl x509 -in mycert.pem -outform der \| openssl base64 -A` |
 | certificate_path | N | /etc/aws-kms-pkcs11/mycert.pem | Same as "certificate" but refers to a PEM certificate on disk instead of embedding the certificate value into the config. |
 
 If you are encountering errors using this provider, try setting the `AWS_KMS_PKCS11_DEBUG` environment variable to a non-empty value. This should enable debug logging to stdout from the module.
