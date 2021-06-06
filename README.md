@@ -100,6 +100,10 @@ Last login: Thu Nov 19 10:35:42 2020
 ~$
 ```
 
+## Kernel Module Signing
+
+An example for kernel module signing [can be found here](kernel_signing.md).
+
 # Configuration
 
 AWS credentials are pulled from the usual places (environment variables, ~/.aws/credentials, and IMDS). Further configuration is read from either `/etc/aws-kms-pkcs11/config.json` or `$XDG_CONFIG_HOME/aws-kms-pkcs11/config.json` (note that `XDG_CONFIG_HOME=$HOME/.config` by default).
