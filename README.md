@@ -101,7 +101,9 @@ Last login: Thu Nov 19 10:35:42 2020
 ```
 
 ## P11Tool Configuration
-p11tool is a useful tool part of the gnutls-bin ubuntu package and can be installed with `apt install gnutls-bin`.
+
+p11tool is a useful tool included as part of the gnutls-bin package on Debian-based systems. It can be installed with `apt install gnutls-bin`. After it is installed you can configure it to be aware of the aws-kms-pkcss11 module as follows:
+
 ```
 mkdir -p "/etc/pkcs11/modules"
 touch "/etc/pkcs11/pkcs11.conf"
@@ -110,7 +112,9 @@ module: /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
 critical: no
 EOF
 ```
-After config you can use the p11tool command to list some helpful info
+
+After this configuration you can use the p11tool command to list some helpful info
+
 ```
 p11tool --list-tokens
 p11tool --list-token-urls
