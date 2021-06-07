@@ -100,6 +100,22 @@ Last login: Thu Nov 19 10:35:42 2020
 ~$
 ```
 
+## P11Tool Configuration
+p11tool is a useful tool part of the gnutls-bin ubuntu package and can be installed with `apt install gnutls-bin`.
+```
+mkdir -p "/etc/pkcs11/modules"
+touch "/etc/pkcs11/pkcs11.conf"
+cat >"/etc/pkcs11/modules/aws-kms-pkcs11.module" <<EOF
+module: /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
+critical: no
+EOF
+```
+After config you can use the p11tool command to list some helpful info
+```
+p11tool --list-tokens
+p11tool --list-token-urls
+```
+
 ## Kernel Module Signing
 
 An example for kernel module signing [can be found here](kernel_signing.md).
