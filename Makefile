@@ -36,6 +36,19 @@ ifeq ($(PKCS11_INC),)
   endif
 endif
 
+ifeq ($(PKCS11_MOD_PATH),)
+  PKCS11_MOD_PATH := $(shell pkg-config --variable p11_module_path p11-kit-1 2>/dev/null)
+  ifeq ($(PKCS11_MOD_PATH),)
+    PKCS11_MOD_PATH := $(shell pkg-config --variable libdir nss 2>/dev/null)
+    ifneq ($(PKCS11_MOD_PATH),)
+      PKCS11_MOD_PATH := $(addsuffix /pkcs11,$(PKCS11_MOD_PATH))
+    endif
+  endif
+  ifeq ($(PKCS11_MOD_PATH),)
+    $(error p11-kit or nss not found, specify PKCS11_MOD_PATH)
+  endif
+endif
+
 ifeq ($(JSON_C_INC),)
   JSON_C_INC := $(shell pkg-config --cflags json-c 2>/dev/null)
   ifeq ($(JSON_C_INC),)
@@ -70,7 +83,7 @@ aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp
 	    -Wl,--no-whole-archive -lcrypto -ljson-c -lcurl
 
 install: aws_kms_pkcs11.so
-	cp aws_kms_pkcs11.so /usr/lib/x86_64-linux-gnu/pkcs11/
+	cp aws_kms_pkcs11.so $(PKCS11_MOD_PATH)/
 
 uninstall:
-	rm -f /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
+	rm -f $(PKCS11_MOD_PATH)/aws_kms_pkcs11.so
