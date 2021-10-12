@@ -31,6 +31,12 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
                 }
             }
             break;
+        case CKA_TOKEN:
+            *pulValueLen = sizeof(CK_BBOOL);
+            if (pValue != NULL_PTR) {
+                *((CK_BBOOL*)pValue) = CK_TRUE;
+            }
+            break;
         case CKA_ID:
         case CKA_LABEL:
             *pulValueLen = slot.GetKmsKeyId().length();
