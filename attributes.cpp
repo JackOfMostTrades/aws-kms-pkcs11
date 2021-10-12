@@ -296,6 +296,11 @@ CK_RV getCertificateAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_
     break;
 
   case CKA_ID:
+    label = slot.GetKmsKeyId();
+    len = label.length();
+    data = (CK_BYTE_PTR)label.c_str();
+    break;
+
   case CKA_LABEL:
     label = slot.GetLabel();
     if (label.length() == 0) {
