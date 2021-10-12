@@ -26,8 +26,8 @@ using std::vector;
 static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
 static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
-static const CK_OBJECT_HANDLE PRIVATE_KEY_HANDLE = 0;
-static const CK_OBJECT_HANDLE CERTIFICATE_HANDLE = 1;
+static const CK_OBJECT_HANDLE PRIVATE_KEY_HANDLE = 1;
+static const CK_OBJECT_HANDLE CERTIFICATE_HANDLE = 2;
 static const CK_OBJECT_HANDLE FIRST_OBJECT_HANDLE = PRIVATE_KEY_HANDLE;
 static const CK_OBJECT_HANDLE LAST_OBJECT_HANDLE = CERTIFICATE_HANDLE;
 
@@ -368,7 +368,7 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, 
         session->find_objects_template[i].ulValueLen = pTemplate[i].ulValueLen;
     }
     session->find_objects_template_count = ulCount;
-    session->find_objects_index = 0;
+    session->find_objects_index = FIRST_OBJECT_HANDLE ;
 
     return CKR_OK;
 }
@@ -520,7 +520,7 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJ
     if (pMechanism == NULL_PTR) {
         return CKR_ARGUMENTS_BAD;
     }
-    if (hKey != 0) {
+    if (hKey != PRIVATE_KEY_HANDLE) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
     session->sign_mechanism = pMechanism->mechanism;
