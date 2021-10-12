@@ -354,6 +354,39 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
+CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo) {
+    if (pInfo == NULL) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    switch (type) {
+    case CKM_RSA_PKCS:
+        pInfo->ulMinKeySize = 2048;
+        pInfo->ulMaxKeySize = 2048;
+        pInfo->flags = CKF_SIGN;
+        break;
+    case CKM_ECDSA:
+        pInfo->ulMinKeySize = 256;
+        pInfo->ulMaxKeySize = 256;
+        pInfo->flags = CKF_SIGN;
+        break;
+    default:
+       return CKR_MECHANISM_INVALID;
+    }
+    return CKR_OK;
+}
+
+CK_RV C_GetMechanismList(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount) {
+    if (pulCount == NULL_PTR) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    if (pMechanismList != NULL) {
+        pMechanismList[0] = CKM_RSA_PKCS;
+        pMechanismList[1] = CKM_ECDSA;
+    }
+    *pulCount = 2;
+    return CKR_OK;
+}
+
 CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount) {
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
