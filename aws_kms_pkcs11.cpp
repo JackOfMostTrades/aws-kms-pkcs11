@@ -3,7 +3,6 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
-#include <pkcs11.h>
 #include <json-c/json.h>
 
 #include <algorithm>
@@ -14,6 +13,7 @@
 #include <aws/kms/model/ListKeysRequest.h>
 #include <aws/kms/model/SignRequest.h>
 
+#include "pkcs11_compat.h"
 #include "attributes.h"
 #include "aws_kms_slot.h"
 #include "certificates.h"

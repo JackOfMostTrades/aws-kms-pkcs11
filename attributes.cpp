@@ -1,8 +1,8 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
-#include <pkcs11.h>
 
+#include "pkcs11_compat.h"
 #include "aws_kms_slot.h"
 
 CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
