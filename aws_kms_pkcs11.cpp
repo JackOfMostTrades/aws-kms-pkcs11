@@ -408,7 +408,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
         // Pull the real attribute value
         res = getAttributeForObject(slot, idx, attr.type, NULL_PTR, &buffer_size);
         if (res != CKR_OK) {
-            return res;
+            return CK_FALSE;
         }
         if (buffer_size != attr.ulValueLen) {
             return CK_FALSE;
@@ -419,7 +419,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
         }
         res = getAttributeForObject(slot, idx, attr.type, buffer, &buffer_size);
         if (res != CKR_OK) {
-            return res;
+            return CK_FALSE;
         }
 
         // Special case for CKA_CLASS because we want to match CKO_PUBLIC_KEY even though we have a CKO_PRIVATE_KEY
