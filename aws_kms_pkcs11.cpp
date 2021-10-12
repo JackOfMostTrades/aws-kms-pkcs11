@@ -3,7 +3,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
-#include <json-c/json.h>
+#include <json.h>
 
 #include <algorithm>
 #include <vector>
