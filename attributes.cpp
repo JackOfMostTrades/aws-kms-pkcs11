@@ -14,6 +14,7 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
     const EC_GROUP* ec_group;
     const BIGNUM* bn;
     size_t len, len2;
+    string label;
     ASN1_OCTET_STRING* os;
 
     Aws::Utils::ByteBuffer key_data;
@@ -38,12 +39,22 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
             }
             break;
         case CKA_ID:
-        case CKA_LABEL:
-            *pulValueLen = slot.GetKmsKeyId().length();
+	    label = slot.GetKmsKeyId();
+            *pulValueLen = label.length();
             if (pValue != NULL_PTR) {
-                memcpy(pValue, slot.GetKmsKeyId().c_str(), slot.GetKmsKeyId().length());
+                memcpy(pValue, label.c_str(), label.length());
             }
             break;
+        case CKA_LABEL:
+	    label = slot.GetLabel();
+	    if (label.length() == 0) {
+		    label = slot.GetKmsKeyId();
+	    }
+            *pulValueLen = label.length();
+            if (pValue != NULL_PTR) {
+                memcpy(pValue, label.c_str(), label.length());
+            }
+	    break;
         case CKA_SIGN:
             key_data = slot.GetPublicKeyData();
             if (key_data.GetLength() == 0) {
