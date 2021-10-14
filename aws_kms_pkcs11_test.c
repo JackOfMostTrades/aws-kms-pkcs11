@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <pkcs11.h>
 #include <dlfcn.h>
+#include "pkcs11_compat.h"
 
 void dump_bytes(const char* name, const unsigned char* bytes, unsigned long len) {
     printf("%s=", name);

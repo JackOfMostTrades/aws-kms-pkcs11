@@ -25,7 +25,7 @@ jobs:
           paths:
             - ~/aws-sdk-cpp
       - run:
-          command: make
+          command: AWS_SDK_PATH=$HOME/aws-sdk-cpp make
       - run:
           command: mkdir artifacts && cp aws_kms_pkcs11.so artifacts/
       - store_artifacts:

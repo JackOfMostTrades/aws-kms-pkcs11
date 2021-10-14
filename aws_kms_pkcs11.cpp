@@ -3,8 +3,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
-#include <pkcs11.h>
-#include <json-c/json.h>
+#include <json.h>
 
 #include <algorithm>
 #include <vector>
@@ -14,6 +13,7 @@
 #include <aws/kms/model/ListKeysRequest.h>
 #include <aws/kms/model/SignRequest.h>
 
+#include "pkcs11_compat.h"
 #include "attributes.h"
 #include "aws_kms_slot.h"
 #include "certificates.h"
@@ -26,8 +26,8 @@ using std::vector;
 static_assert(sizeof(CK_SESSION_HANDLE) >= sizeof(void*), "Session handles are not big enough to hold a pointer to the session struct on this architecture");
 static_assert(sizeof(CK_OBJECT_HANDLE) >= sizeof(void*), "Object handles are not big enough to hold a pointer to the session struct on this architecture");
 
-static const CK_OBJECT_HANDLE PRIVATE_KEY_HANDLE = 0;
-static const CK_OBJECT_HANDLE CERTIFICATE_HANDLE = 1;
+static const CK_OBJECT_HANDLE PRIVATE_KEY_HANDLE = 1;
+static const CK_OBJECT_HANDLE CERTIFICATE_HANDLE = 2;
 static const CK_OBJECT_HANDLE FIRST_OBJECT_HANDLE = PRIVATE_KEY_HANDLE;
 static const CK_OBJECT_HANDLE LAST_OBJECT_HANDLE = CERTIFICATE_HANDLE;
 
@@ -131,7 +131,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
     slots = new vector<AwsKmsSlot>();
     struct json_object* slots_array;
     if (json_object_object_get_ex(config, "slots", &slots_array) && json_object_is_type(slots_array, json_type_array)) {
-        for (size_t i = 0; i < json_object_array_length(slots_array); i++) {
+	    for (size_t i = 0; i < (size_t)json_object_array_length(slots_array); i++) {
             struct json_object* slot_item = json_object_array_get_idx(slots_array, i);
             if (json_object_is_type(slot_item, json_type_object)) {
                 struct json_object* val;
@@ -354,6 +354,39 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
+CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo) {
+    if (pInfo == NULL) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    switch (type) {
+    case CKM_RSA_PKCS:
+        pInfo->ulMinKeySize = 2048;
+        pInfo->ulMaxKeySize = 2048;
+        pInfo->flags = CKF_SIGN;
+        break;
+    case CKM_ECDSA:
+        pInfo->ulMinKeySize = 256;
+        pInfo->ulMaxKeySize = 256;
+        pInfo->flags = CKF_SIGN;
+        break;
+    default:
+       return CKR_MECHANISM_INVALID;
+    }
+    return CKR_OK;
+}
+
+CK_RV C_GetMechanismList(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount) {
+    if (pulCount == NULL_PTR) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    if (pMechanismList != NULL) {
+        pMechanismList[0] = CKM_RSA_PKCS;
+        pMechanismList[1] = CKM_ECDSA;
+    }
+    *pulCount = 2;
+    return CKR_OK;
+}
+
 CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount) {
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
@@ -368,7 +401,7 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate, 
         session->find_objects_template[i].ulValueLen = pTemplate[i].ulValueLen;
     }
     session->find_objects_template_count = ulCount;
-    session->find_objects_index = 0;
+    session->find_objects_index = FIRST_OBJECT_HANDLE ;
 
     return CKR_OK;
 }
@@ -408,7 +441,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
         // Pull the real attribute value
         res = getAttributeForObject(slot, idx, attr.type, NULL_PTR, &buffer_size);
         if (res != CKR_OK) {
-            return res;
+            return CK_FALSE;
         }
         if (buffer_size != attr.ulValueLen) {
             return CK_FALSE;
@@ -419,7 +452,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
         }
         res = getAttributeForObject(slot, idx, attr.type, buffer, &buffer_size);
         if (res != CKR_OK) {
-            return res;
+            return CK_FALSE;
         }
 
         // Special case for CKA_CLASS because we want to match CKO_PUBLIC_KEY even though we have a CKO_PRIVATE_KEY
@@ -520,7 +553,7 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJ
     if (pMechanism == NULL_PTR) {
         return CKR_ARGUMENTS_BAD;
     }
-    if (hKey != 0) {
+    if (hKey != PRIVATE_KEY_HANDLE) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
     session->sign_mechanism = pMechanism->mechanism;
