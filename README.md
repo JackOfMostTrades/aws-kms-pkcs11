@@ -124,6 +124,31 @@ p11tool --list-token-urls
 
 An example for kernel module signing [can be found here](kernel_signing.md).
 
+## pesign
+
+pesign is used by most Linux distributions to sign PE binaries for secure boot
+
+It uses the NSS libraries which relies on a "certdb" database with the certificates, and the configuration of the PKCS11 modules. In this example, we'll create a custom certdb for signing, and add our module to it:
+
+```
+mkdir my-cert-db
+certutil -N --empty-password -d my-cert-db
+modutil -dbdir my-cert-db -add kms -libfile /usr/lib/x86_64-linux-gnu/pkcs11/aws_kms_pkcs11.so
+```
+
+You can check that the key and certificate are there:
+```
+certutil -d my-cert-db -K -h all
+certutil -d my-cert-db -L -h all
+```
+
+Now, assuming you have a key names "my-signing-key" configured with a certificate setup in your json file (as documented below), you can do:
+
+```
+pesign -i <input_file> -o <output_file> -s -n my-cert-db -c my-signing-key -t my-signing-key
+```
+
+
 # Configuration
 
 AWS credentials are pulled from the usual places (environment variables, ~/.aws/credentials, and IMDS). Further configuration is read from either `/etc/aws-kms-pkcs11/config.json` or `$XDG_CONFIG_HOME/aws-kms-pkcs11/config.json` (note that `XDG_CONFIG_HOME=$HOME/.config` by default).
@@ -163,5 +188,20 @@ The easiest way to install the provider is to download the binary artifact from 
 
 # Building from source
 
-The Makefile in this repo assumes that you have built the AWS SDK with static libraries and installed it to `~/aws-sdk-cpp`. If so, then just running `make` should be sufficient. Check out the [circleci config](.circleci/config.yml) for pointers.
+The Makefile in this repo tries to intuit the location of the various components and libraries it needs. This can be controlled by the following variables:
 
+`AWS_SDK_PATH`       : Path to the AWS sdk<br>
+`PKCS11_INC`         : Path to the pkcs11.h header file<br>
+`JSON_C_INC`         : Path to the json-c library headers<br>
+
+Additionally these variables can be set to control the use of the AWS SDK static vs. dynamic libraries. By default the Makefile will use
+the static ones if available, otherwise the dynamic ones:
+
+`AWS_SDK_STATIC = y`     : Force use of static libraries for both C and C++<br>
+`AWS_SDK_STATIC = n`     : Force use of dynamic libraries for both C and C++<br>
+`AWS_SDK_C_STATIC = y`   : Force use of static libraries for C<br>
+`AWS_SDK_C_STATIC = n`   : Force use of dynamic libraries for C<br>
+`AWS_SDK_CPP_STATIC = y` : Force use of static libraries for C++<br>
+`AWS_SDK_CPP_STATIC = n` : Force use of dynamic libraries for C++<br>
+
+Finally the variable `PKCS11_MOD_PATH` can be used to control the destination directory for `make install`
