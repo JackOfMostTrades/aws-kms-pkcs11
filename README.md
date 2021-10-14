@@ -178,7 +178,7 @@ The `slots` key is the only supported top-level attribute at the moment. This is
 | label | N | my-signing-key | The token label to use for this slot; this is usually used when using a PKCS#11 URI. If not specified, the first 32 characters of the KMS key ID will be used as a label. |
 | aws\_region | N | us-west-2 | The AWS region where the above key resides. Uses the AWS default if not specified. |
 | certificate | N | MIIBMjCB2... | A base64-encoded DER-encoded X.509 certificate to make available as an object on this slot. This is useful for use-cases where a signing library expects both a certificate and key available on the PKCS#11 token. You can generate a certificate with this format with a command such as `openssl x509 -in mycert.pem -outform der \| openssl base64 -A` |
-| certificate_path | N | /etc/aws-kms-pkcs11/mycert.pem | Same as "certificate" but refers to a PEM certificate on disk instead of embedding the certificate value into the config. |
+| certificate\_path | N | /etc/aws-kms-pkcs11/mycert.pem | Same as "certificate" but refers to a PEM certificate on disk instead of embedding the certificate value into the config. |
 
 If you are encountering errors using this provider, try setting the `AWS_KMS_PKCS11_DEBUG` environment variable to a non-empty value. This should enable debug logging to stdout from the module.
 
@@ -190,18 +190,18 @@ The easiest way to install the provider is to download the binary artifact from 
 
 The Makefile in this repo tries to intuit the location of the various components and libraries it needs. This can be controlled by the following variables:
 
-`AWS_SDK_PATH`       : Path to the AWS sdk<br>
-`PKCS11_INC`         : Path to the pkcs11.h header file<br>
-`JSON_C_INC`         : Path to the json-c library headers<br>
+`AWS_SDK_PATH`       : Path to the AWS sdk  
+`PKCS11_INC`         : Path to the pkcs11.h header file  
+`JSON_C_INC`         : Path to the json-c library headers  
 
 Additionally these variables can be set to control the use of the AWS SDK static vs. dynamic libraries. By default the Makefile will use
 the static ones if available, otherwise the dynamic ones:
 
-`AWS_SDK_STATIC = y`     : Force use of static libraries for both C and C++<br>
-`AWS_SDK_STATIC = n`     : Force use of dynamic libraries for both C and C++<br>
-`AWS_SDK_C_STATIC = y`   : Force use of static libraries for C<br>
-`AWS_SDK_C_STATIC = n`   : Force use of dynamic libraries for C<br>
-`AWS_SDK_CPP_STATIC = y` : Force use of static libraries for C++<br>
-`AWS_SDK_CPP_STATIC = n` : Force use of dynamic libraries for C++<br>
+`AWS_SDK_STATIC = y`     : Force use of static libraries for both C and C++  
+`AWS_SDK_STATIC = n`     : Force use of dynamic libraries for both C and C++  
+`AWS_SDK_C_STATIC = y`   : Force use of static libraries for C  
+`AWS_SDK_C_STATIC = n`   : Force use of dynamic libraries for C  
+`AWS_SDK_CPP_STATIC = y` : Force use of static libraries for C++  
+`AWS_SDK_CPP_STATIC = n` : Force use of dynamic libraries for C++  
 
 Finally the variable `PKCS11_MOD_PATH` can be used to control the destination directory for `make install`

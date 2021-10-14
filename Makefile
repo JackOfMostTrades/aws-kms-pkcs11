@@ -109,12 +109,13 @@ ifeq ($(JSON_C_INC),)
 endif
 
 # Build library link list
+STATIC_LIBS :=
 LIBS :=
 ifeq ($(AWS_SDK_C_STATIC),y)
   $(info Using C SDK static libraries)
-  LIBS += $(AWS_SDK_LIB_PATH)/libaws-checksums.a
-  LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-common.a
-  LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-event-stream.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-checksums.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-common.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-event-stream.a
 else ifeq ($(AWS_SDK_C_STATIC),n)
   $(info Using C SDK dynamic libraries)
   LIBS += $(AWS_SDK_LIB_PATH)/libaws-checksums.so
@@ -125,8 +126,8 @@ else
 endif
 ifeq ($(AWS_SDK_CPP_STATIC),y)
   $(info Using C++ SDK static libraries)
-  LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-core.a
-  LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-kms.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-core.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-kms.a
 else ifeq ($(AWS_SDK_CPP_STATIC),n)
   $(info Using C++ SDK dynamic libraries)
   LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-core.so
@@ -155,7 +156,7 @@ aws_kms_pkcs11_test: aws_kms_pkcs11_test.c aws_kms_pkcs11.so
 
 aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp attributes.cpp certificates.cpp
 	g++ -shared -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) -fno-exceptions -std=c++17 $(SRC) \
-	    -o aws_kms_pkcs11.so -Wl,--whole-archive \
+	    -o aws_kms_pkcs11.so -Wl,--whole-archive $(STATIC_LIBS) \
 	    -Wl,--no-whole-archive $(LIBS) -lcrypto -ljson-c -lcurl
 
 install: aws_kms_pkcs11.so
