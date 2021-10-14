@@ -131,7 +131,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
     slots = new vector<AwsKmsSlot>();
     struct json_object* slots_array;
     if (json_object_object_get_ex(config, "slots", &slots_array) && json_object_is_type(slots_array, json_type_array)) {
-        for (size_t i = 0; i < json_object_array_length(slots_array); i++) {
+	    for (size_t i = 0; i < (size_t)json_object_array_length(slots_array); i++) {
             struct json_object* slot_item = json_object_array_get_idx(slots_array, i);
             if (json_object_is_type(slot_item, json_type_object)) {
                 struct json_object* val;
