@@ -299,6 +299,8 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
     }
     memset(pInfo->label, ' ', 32);
     memcpy(pInfo->label, label.c_str(), label_len);
+    memset(pInfo->manufacturerID, ' ', 32);
+    memcpy(pInfo->manufacturerID, "aws_kms", 7);
     return CKR_OK;
 }
 
