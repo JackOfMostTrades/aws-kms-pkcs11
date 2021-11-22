@@ -14,6 +14,7 @@
 #include <aws/kms/model/SignRequest.h>
 
 #include "pkcs11_compat.h"
+#include "openssl_compat.h"
 #include "attributes.h"
 #include "aws_kms_slot.h"
 #include "certificates.h"
