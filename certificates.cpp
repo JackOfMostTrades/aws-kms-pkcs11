@@ -9,6 +9,7 @@
 #include <aws/acm-pca/model/GetCertificateResult.h>
 
 #include "debug.h"
+#include "openssl_compat.h"
 
 using std::string;
 

@@ -3,6 +3,7 @@
 #include <openssl/x509.h>
 
 #include "pkcs11_compat.h"
+#include "openssl_compat.h"
 #include "aws_kms_slot.h"
 
 static CK_RV copyAttribute(CK_VOID_PTR pDest, CK_ULONG_PTR pulDestLen, const void *pSrc, CK_ULONG ulSrcLen)
@@ -165,7 +166,8 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
             const EC_KEY* ec_key = EVP_PKEY_get0_EC_KEY(pkey);
 
             unsigned char* buffer = NULL;
-            size_t len = i2o_ECPublicKey(ec_key, &buffer);
+	    // ec_key argument isn't const on openssl 1.0.x
+            size_t len = i2o_ECPublicKey((EC_KEY*)ec_key, &buffer);
 
             // Wrap the point in an ASN.1 octet string
             ASN1_OCTET_STRING* os = ASN1_STRING_new();
@@ -218,7 +220,7 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
 
 CK_RV do_get_raw_cert(const X509* cert, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
-    CK_ULONG len = i2d_X509(cert, &buffer);
+    CK_ULONG len = i2d_X509(OSSL_UNCONST(X509, cert), &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
     if (len > 0)
         ret = copyAttribute(pValue, pulValueLen, buffer, len);
@@ -228,7 +230,7 @@ CK_RV do_get_raw_cert(const X509* cert, CK_VOID_PTR pValue, CK_ULONG_PTR pulValu
 
 CK_RV do_get_raw_name(const X509_NAME* name, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
-    CK_ULONG len = i2d_X509_NAME(name, &buffer);
+    CK_ULONG len = i2d_X509_NAME(OSSL_UNCONST(X509_NAME, name), &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
     if (len > 0)
         ret = copyAttribute(pValue, pulValueLen, buffer, len);
@@ -238,7 +240,7 @@ CK_RV do_get_raw_name(const X509_NAME* name, CK_VOID_PTR pValue, CK_ULONG_PTR pu
 
 CK_RV do_get_raw_integer(const ASN1_INTEGER* serial, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
-    CK_ULONG len = i2d_ASN1_INTEGER(serial, &buffer);
+    CK_ULONG len = i2d_ASN1_INTEGER(OSSL_UNCONST(ASN1_INTEGER, serial), &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
     if (len > 0)
         ret = copyAttribute(pValue, pulValueLen, buffer, len);
@@ -273,13 +275,13 @@ CK_RV getCertificateAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_
             return copyBoolAttribute(pValue, pulValueLen, CK_FALSE);
 
         case CKA_SUBJECT:
-            return do_get_raw_name(X509_get_subject_name(cert), pValue, pulValueLen);
+            return do_get_raw_name(X509_get_subject_name(OSSL_UNCONST(X509, cert)), pValue, pulValueLen);
 
         case CKA_ISSUER:
-            return do_get_raw_name(X509_get_issuer_name(cert), pValue, pulValueLen);
+            return do_get_raw_name(X509_get_issuer_name(OSSL_UNCONST(X509, cert)), pValue, pulValueLen);
 
         case CKA_SERIAL_NUMBER:
-            return do_get_raw_integer(X509_get0_serialNumber(cert), pValue, pulValueLen);
+	    return do_get_raw_integer(X509_get0_serialNumber(OSSL_UNCONST(X509, cert)), pValue, pulValueLen);
 
         case CKA_VALUE:
             return do_get_raw_cert(cert, pValue, pulValueLen);
