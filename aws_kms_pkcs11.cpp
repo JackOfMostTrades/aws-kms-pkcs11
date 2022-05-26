@@ -573,6 +573,8 @@ CK_RV C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, CK_ULONG_P
 }
 
 static const unsigned char rsa_id_sha256[] = { 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20 };
+static const unsigned char rsa_id_sha384[] = { 0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05, 0x00, 0x04, 0x30 };
+static const unsigned char rsa_id_sha512[] = { 0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40 };
 static CK_BBOOL has_prefix(CK_BYTE_PTR pData, CK_ULONG ulDataLen, const unsigned char* prefix, size_t prefixLen) {
     if (ulDataLen < sizeof(prefix)) {
         return CK_FALSE;
@@ -636,20 +638,45 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
         case CKM_ECDSA:
             req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
             req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
-            req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::ECDSA_SHA_256);
+            switch (slot.GetKeySpec()) {
+                case Aws::KMS::Model::KeySpec::ECC_NIST_P256:
+                    req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::ECDSA_SHA_256);
+                    break;
+                case Aws::KMS::Model::KeySpec::ECC_NIST_P384:
+                    req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::ECDSA_SHA_384);
+                    break;
+                case Aws::KMS::Model::KeySpec::ECC_NIST_P521:
+                    req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::ECDSA_SHA_512);
+                    break;
+                default:
+                    debug("Unsupported EC key spec: %d", slot.GetKeySpec());
+                    return CKR_ARGUMENTS_BAD;
+            }
             break;
         case CKM_RSA_PKCS:
-            if (ulDataLen <= 32) {
-                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
-            } else if (has_prefix(pData, ulDataLen, rsa_id_sha256, sizeof(rsa_id_sha256))) {
-                // Strip the digest algorithm identifier if it has been provided
+            if (has_prefix(pData, ulDataLen, rsa_id_sha256, sizeof(rsa_id_sha256))) {
                 req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData + sizeof(rsa_id_sha256), ulDataLen - sizeof(rsa_id_sha256))));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_256);
+            } else if (has_prefix(pData, ulDataLen, rsa_id_sha384, sizeof(rsa_id_sha384))) {
+                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData + sizeof(rsa_id_sha384), ulDataLen - sizeof(rsa_id_sha384))));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_384);
+            } else if (has_prefix(pData, ulDataLen, rsa_id_sha512, sizeof(rsa_id_sha512))) {
+                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData + sizeof(rsa_id_sha512), ulDataLen - sizeof(rsa_id_sha512))));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_512);
+            } else if (ulDataLen <= 32) {
+                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_256);
+            } else if (ulDataLen <= 48) {
+                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_384);
+            } else if (ulDataLen <= 64) {
+                req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_512);
             } else {
-                debug("Invalid data length for SHA256 RSA signature: %d", ulDataLen);
+                debug("Invalid data length for RSA signature: %d", ulDataLen);
                 return CKR_ARGUMENTS_BAD;
             }
             req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
-            req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PKCS1_V1_5_SHA_256);
             break;
         default:
             return CKR_ARGUMENTS_BAD;

@@ -28,9 +28,9 @@ string AwsKmsSlot::GetKmsKeyId() {
 X509* AwsKmsSlot::GetCertificate() {
     return this->certificate;
 }
-Aws::Utils::ByteBuffer AwsKmsSlot::GetPublicKeyData() {
+void AwsKmsSlot::FetchPublicKeyData() {
     if (this->public_key_data_fetched) {
-        return this->public_key_data;
+        return;
     }
     Aws::Client::ClientConfiguration awsConfig;
     if (this->aws_region.length() > 0) {
@@ -45,10 +45,19 @@ Aws::Utils::ByteBuffer AwsKmsSlot::GetPublicKeyData() {
     if (!res.IsSuccess()) {
         debug("Got error from AWS fetching public key for key id %s: %s", this->kms_key_id.c_str(), res.GetError().GetMessage().c_str());
         this->public_key_data = Aws::Utils::ByteBuffer();
+        this->key_spec = Aws::KMS::Model::KeySpec::NOT_SET;
     } else {
         debug("Successfully fetched public key data.");
         this->public_key_data = res.GetResult().GetPublicKey();
+        this->key_spec = res.GetResult().GetKeySpec();
     }
     this->public_key_data_fetched = true;
+}
+Aws::Utils::ByteBuffer AwsKmsSlot::GetPublicKeyData() {
+    this->FetchPublicKeyData();
     return this->public_key_data;
+}
+Aws::KMS::Model::KeySpec AwsKmsSlot::GetKeySpec() {
+    this->FetchPublicKeyData();
+    return this->key_spec;
 }
