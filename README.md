@@ -49,6 +49,16 @@ Found 1 private key:
 AWS_KMS: Successfully called KMS to do a signing operation.
 ```
 
+If you have downloaded the public key from KMS to `my-signing-key.pub` you can verify the above signature with
+
+```
+openssl pkeyutl -in foo -verify -sigfile foo.sig -inkey my-signing-key.pub  -pubin
+Signature Verified Successfully
+```
+
+This example using `pkeyutl` assumes you are using an EC key.
+If you are using an RSA key, append the `-pkeyopt digest:sha256` option to both the sign and verify steps. 
+
 ## Generate a self-signed certificate
 
 This will create a self-signed certificate in `mycert.pem` using your KMS key.
