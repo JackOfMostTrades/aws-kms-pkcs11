@@ -1,15 +1,13 @@
 version: 2.1
 
-jobs:
-  build:
-    docker:
-      - image: cimg/base:stable
+commands:
+  build_common:
     steps:
       - checkout
       - run:
-          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev libopencryptoki-dev libjson-c-dev
+          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev libopencryptoki-dev libjson-c-dev libp11-kit-dev
       - restore_cache:
-          key: aws-sdk-cpp-1.9.150
+          key: aws-sdk-cpp-1.9.150-{{arch}}
       - run:
           command: |
             if [[ ! -e ~/aws-sdk-cpp ]]; then
@@ -25,19 +23,33 @@ jobs:
                 cd ~/aws-sdk-cpp-src/sdk_build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY=kms -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/aws-sdk-cpp -DBUILD_SHARED_LIBS=OFF && make && make install
             fi
       - save_cache:
-          key: aws-sdk-cpp-1.9.150
+          key: aws-sdk-cpp-1.9.150-{{arch}}
           paths:
             - ~/aws-sdk-cpp
       - run:
           command: AWS_SDK_PATH=$HOME/aws-sdk-cpp make
       - run:
-          command: mkdir artifacts && cp aws_kms_pkcs11.so artifacts/
+          command: mkdir -p "artifacts/$(uname -m)" && cp aws_kms_pkcs11.so "artifacts/$(uname -m)"
       - store_artifacts:
           path: artifacts
       - persist_to_workspace:
           root: artifacts
           paths:
-            - aws_kms_pkcs11.so
+            - "*/aws_kms_pkcs11.so"
+
+
+jobs:
+  build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - build_common
+  build-arm64:
+    machine:
+      image: ubuntu-2004:current
+    resource_class: arm.medium
+    steps:
+      - build_common
 
   publish-github-release:
     docker:
@@ -57,9 +69,14 @@ workflows:
           filters:
             tags:
               only: /.*/
+      - build-arm64:
+          filters:
+            tags:
+              only: /.*/
       - publish-github-release:
           requires:
             - build
+            - build-arm64
           filters:
             branches:
               ignore: /.*/
