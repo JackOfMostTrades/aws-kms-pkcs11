@@ -29,13 +29,13 @@ commands:
       - run:
           command: AWS_SDK_PATH=$HOME/aws-sdk-cpp make
       - run:
-          command: mkdir -p "artifacts/$(uname -m)" && cp aws_kms_pkcs11.so "artifacts/$(uname -m)"
+          command: mkdir artifacts && cp aws_kms_pkcs11.so "artifacts/aws_kms_pkcs11.$(uname -m).so"
       - store_artifacts:
           path: artifacts
       - persist_to_workspace:
           root: artifacts
           paths:
-            - "*/aws_kms_pkcs11.so"
+            - "aws_kms_pkcs11.*.so"
 
 
 jobs:
