@@ -136,6 +136,7 @@ ifeq ($(AWS_SDK_C_STATIC),y)
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-cal.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-compression.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-s3.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-sdkutils.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libs2n.a
   STATIC_LIBS += -Wl,--end-group
 else ifeq ($(AWS_SDK_C_STATIC),n)
