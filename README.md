@@ -134,6 +134,10 @@ p11tool --list-token-urls
 
 An example for kernel module signing [can be found here](kernel_signing.md).
 
+## GPG Signing
+
+An example for GPG signing [can be found here](gpg_signing.md).
+
 ## pesign
 
 pesign is used by most Linux distributions to sign PE binaries for secure boot
