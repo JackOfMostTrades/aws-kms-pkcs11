@@ -2,6 +2,7 @@ GPG Signing using AWS KMS
 =========================
 
 `gpg` can use the PKCS#11 provider by way of [gnupg-pkcs11-scd](https://github.com/alonbl/gnupg-pkcs11-scd).
+Note that 0.10.0+ is required.
 
 Configure `gpg-agent` to consult the smartcard daemon.
 Keys must have corresponding certificates to be discovered by the daemon.
@@ -52,3 +53,11 @@ Subsequent imports only need the exported key and the smartcard discovery step.
 gpg --import my-signing-key.gpg
 gpg --card-status
 ```
+
+
+Common Issues
+=============
+
+The binary releases for `aws_kms_pkcs11.so` are built on Ubuntu (20.04 at the time of writing) and have a dynamic dependency on OpenSSL and libjson-c.
+If you encounter issues using the binary release, you will likely need to rebuild `aws_kms_pkcs11` on your platform.
+
