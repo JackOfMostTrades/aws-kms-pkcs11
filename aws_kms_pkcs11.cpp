@@ -293,16 +293,20 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
     if (label.length() == 0) {
         label = slot.GetKmsKeyId();
     }
+    static_assert(sizeof(pInfo->label) == 32);
     size_t label_len = label.length();
     if (label_len > 32) {
         label_len = 32;
     }
     memset(pInfo->label, ' ', 32);
     memcpy(pInfo->label, label.c_str(), label_len);
+    static_assert(sizeof(pInfo->manufacturerID) == 32);
     memset(pInfo->manufacturerID, ' ', 32);
     memcpy(pInfo->manufacturerID, "aws_kms", 7);
+    static_assert(sizeof(pInfo->model) == 16);
     memset(pInfo->model, ' ', 16);
     memcpy(pInfo->model, "0", 1);
+    static_assert(sizeof(pInfo->serialNumber) == 16);
     memset(pInfo->serialNumber, ' ', 16);
     memcpy(pInfo->serialNumber, "0", 1);
     return CKR_OK;
