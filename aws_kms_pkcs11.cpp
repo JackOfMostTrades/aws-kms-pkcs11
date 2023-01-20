@@ -108,6 +108,8 @@ static CK_RV load_config(json_object** config) {
 }
 
 CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
+    CK_RV result = CKR_OK;
+
     debug_enabled = CK_FALSE;
     const char* debug_env_var = getenv("AWS_KMS_PKCS11_DEBUG");
     if (debug_env_var != NULL) {
@@ -180,8 +182,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
             Aws::KMS::Model::ListKeysOutcome res = kms.ListKeys(req);
             if (!res.IsSuccess()) {
                 debug("Got error from AWS list keys: %s", res.GetError().GetMessage().c_str());
-                C_Finalize(NULL_PTR);
-                return CKR_FUNCTION_FAILED;
+                result = CKR_FUNCTION_FAILED;
+                break;
             }
 
             for (size_t i = 0; i < res.GetResult().GetKeys().size(); i++) {
@@ -197,16 +199,18 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 
     if (slots->size() == 0) {
         debug("No slots were configured and no KMS keys could be listed via an API call.");
+        result = CKR_FUNCTION_FAILED;
+    } else {
+	debug("Configured slots:");
+	for (size_t i = 0; i < slots->size(); i++) {
+	    debug("  %s", slots->at(i).GetKmsKeyId().c_str());
+	}
+    }
+
+    if (result != CKR_OK) {
         C_Finalize(NULL_PTR);
-        return CKR_FUNCTION_FAILED;
     }
-
-    debug("Configured slots:");
-    for (size_t i = 0; i < slots->size(); i++) {
-        debug("  %s", slots->at(i).GetKmsKeyId().c_str());
-    }
-
-    return CKR_OK;
+    return result;
 }
 
 CK_RV C_Finalize(CK_VOID_PTR pReserved) {
