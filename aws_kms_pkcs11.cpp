@@ -165,6 +165,28 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
                         debug("Failed to parse certificate_path for slot: %s", label.c_str());
                     }
                 }
+                if (json_object_object_get_ex(slot_item, "certificate_arn", &val) && json_object_is_type(val, json_type_string)) {
+                    const string certificate_arn = json_object_get_string(val);
+                    struct json_object *ca_val;
+                    string ca_arn;
+                    if (json_object_object_get_ex(slot_item, "ca_arn", &ca_val) &&
+                        json_object_is_type(ca_val, json_type_string)) {
+                        ca_arn = json_object_get_string(ca_val);
+                    } else {
+                        size_t cert_pos = certificate_arn.find("/certificate/");
+                        if (cert_pos == string::npos) {
+                            debug("ca_arn unspecified and failed to extract from %s\n", certificate_arn.c_str());
+                        } else {
+                            ca_arn = certificate_arn.substr(0, cert_pos);
+                        }
+                    }
+                    debug("Parsing certificate for slot: %s ARN %s from CA %s",
+                          label.c_str(), certificate_arn.c_str(), ca_arn.c_str());
+                    certificate = parseCertificateFromARN(ca_arn, certificate_arn, aws_region);
+                    if (certificate == NULL) {
+                        debug("Failed to parse certificate for slot: %s", label.c_str());
+                    }
+                }
                 slots->push_back(AwsKmsSlot(label, kms_key_id, aws_region, certificate));
             }
         }

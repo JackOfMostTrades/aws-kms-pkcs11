@@ -114,12 +114,14 @@ LIBS :=
 ifeq ($(AWS_SDK_CPP_STATIC),y)
   $(info Using C++ SDK static libraries)
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-kms.a
+  STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-acm-pca.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-core.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-crt-cpp.a
 else ifeq ($(AWS_SDK_CPP_STATIC),n)
   $(info Using C++ SDK dynamic libraries)
   LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-core.so
   LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-kms.so
+  LIBS += $(AWS_SDK_LIB_PATH)/libaws-cpp-sdk-acm-pca.so
 else
     $(error Unrecognized value for AWS_SDK_CPP_STATIC, use y or n)
 endif
