@@ -17,7 +17,7 @@ commands:
                 tar -C ~/aws-sdk-cpp-src --strip-components=1 -zxf ~/aws-sdk-cpp.tar.gz
                 cd ~/aws-sdk-cpp-src && ./prefetch_crt_dependency.sh
                 mkdir ~/aws-sdk-cpp-src/sdk_build
-                cd ~/aws-sdk-cpp-src/sdk_build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY=kms -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/aws-sdk-cpp -DBUILD_SHARED_LIBS=OFF && make && make install
+                cd ~/aws-sdk-cpp-src/sdk_build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="kms;acm-pca" -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/aws-sdk-cpp -DBUILD_SHARED_LIBS=OFF && make && make install
             fi
       - save_cache:
           key: aws-sdk-cpp-1.9.332-{{arch}}
