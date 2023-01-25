@@ -92,6 +92,7 @@ static CK_RV load_config(json_object** config) {
 
         struct json_tokener* tok = json_tokener_new();
         struct json_object* conf = json_tokener_parse_ex(tok, buffer, file_size);
+        enum json_tokener_error errval = json_tokener_get_error(tok);
         json_tokener_free(tok);
         free(buffer);
 
@@ -99,10 +100,9 @@ static CK_RV load_config(json_object** config) {
             *config = conf;
             return CKR_OK;
         } else {
-            debug("Failed to parse config: %s", path.c_str());
+            debug("Failed to parse config %s: %s", path.c_str(), json_tokener_error_desc(errval));
         }
     }
-
     *config = json_object_new_object();
     return CKR_OK;
 }
