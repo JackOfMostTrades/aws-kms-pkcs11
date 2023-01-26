@@ -229,10 +229,10 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
         debug("No slots were configured and no KMS keys could be listed via an API call.");
         result = CKR_FUNCTION_FAILED;
     } else {
-	debug("Configured slots:");
-	for (size_t i = 0; i < slots->size(); i++) {
-	    debug("  %s", slots->at(i).GetKmsKeyId().c_str());
-	}
+        debug("Configured slots:");
+        for (size_t i = 0; i < slots->size(); i++) {
+            debug("  %s", slots->at(i).GetKmsKeyId().c_str());
+        }
     }
 
     if (result != CKR_OK) {
