@@ -9,20 +9,22 @@ using std::string;
 
 class AwsKmsSlot {
 private:
-    string label;
-    string aws_region;
-    string kms_key_id;
+    const string label;
+    const string kms_key_id;
+    const string aws_region;
+    const X509* certificate;
     bool public_key_data_fetched;
+
     Aws::Utils::ByteBuffer public_key_data;
     Aws::KMS::Model::KeySpec key_spec;
-    X509* certificate;
     void FetchPublicKeyData();
 public:
-    AwsKmsSlot(string label, string kms_key_id, string aws_region, X509* certificate);
-    string GetLabel();
-    string GetKmsKeyId();
-    string GetAwsRegion();
-    X509* GetCertificate();
+    AwsKmsSlot(const string &label, const string &kms_key_id, const string aws_region,
+	       const X509* certificate);
+    const string& GetLabel();
+    const string& GetKmsKeyId();
+    const string& GetAwsRegion();
+    const X509* GetCertificate();
     Aws::Utils::ByteBuffer GetPublicKeyData();
     Aws::KMS::Model::KeySpec GetKeySpec();
 };

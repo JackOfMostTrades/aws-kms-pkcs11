@@ -9,23 +9,24 @@
 
 using std::string;
 
-AwsKmsSlot::AwsKmsSlot(string label, string kms_key_id, string aws_region, X509* certificate) {
-    this->label = label;
-    this->kms_key_id = kms_key_id;
-    this->aws_region = aws_region;
-    this->public_key_data_fetched = false;
-    this->certificate = certificate;
+AwsKmsSlot::AwsKmsSlot(const string &label, const string &kms_key_id, const string aws_region,
+		       const X509* certificate) :
+	label(label), kms_key_id(kms_key_id), aws_region(aws_region),
+	certificate(certificate),
+	public_key_data_fetched(false)
+{
 }
-string AwsKmsSlot::GetLabel() {
+
+const string &AwsKmsSlot::GetLabel() {
     return this->label;
 }
-string AwsKmsSlot::GetAwsRegion() {
+const string & AwsKmsSlot::GetAwsRegion() {
     return this->aws_region;
 }
-string AwsKmsSlot::GetKmsKeyId() {
+const string & AwsKmsSlot::GetKmsKeyId() {
     return this->kms_key_id;
 }
-X509* AwsKmsSlot::GetCertificate() {
+const X509* AwsKmsSlot::GetCertificate() {
     return this->certificate;
 }
 void AwsKmsSlot::FetchPublicKeyData() {
@@ -33,7 +34,7 @@ void AwsKmsSlot::FetchPublicKeyData() {
         return;
     }
     Aws::Client::ClientConfiguration awsConfig;
-    if (this->aws_region.length() > 0) {
+    if (!this->aws_region.empty()) {
         awsConfig.region = this->aws_region;
     }
     Aws::KMS::KMSClient kms(awsConfig);
