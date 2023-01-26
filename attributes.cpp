@@ -216,7 +216,7 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
     return CKR_OK;
 }
 
-CK_RV do_get_raw_cert(X509* cert, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
+CK_RV do_get_raw_cert(const X509* cert, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
     CK_ULONG len = i2d_X509(cert, &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
@@ -226,7 +226,7 @@ CK_RV do_get_raw_cert(X509* cert, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) 
     return ret;    
 }
 
-CK_RV do_get_raw_name(X509_NAME* name, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
+CK_RV do_get_raw_name(const X509_NAME* name, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
     CK_ULONG len = i2d_X509_NAME(name, &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
@@ -236,7 +236,7 @@ CK_RV do_get_raw_name(X509_NAME* name, CK_VOID_PTR pValue, CK_ULONG_PTR pulValue
     return ret;    
 }
 
-CK_RV do_get_raw_integer(ASN1_INTEGER* serial, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
+CK_RV do_get_raw_integer(const ASN1_INTEGER* serial, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
     CK_BYTE_PTR buffer = NULL;
     CK_ULONG len = i2d_ASN1_INTEGER(serial, &buffer);
     CK_RV ret = CKR_FUNCTION_FAILED;
@@ -247,7 +247,7 @@ CK_RV do_get_raw_integer(ASN1_INTEGER* serial, CK_VOID_PTR pValue, CK_ULONG_PTR 
 }
 
 CK_RV getCertificateAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_PTR pValue, CK_ULONG_PTR pulValueLen) {
-    X509* cert = slot.GetCertificate();
+    const X509* cert = slot.GetCertificate();
     if (cert == NULL) {
         return CKR_OBJECT_HANDLE_INVALID;
     }
@@ -279,7 +279,7 @@ CK_RV getCertificateAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_
             return do_get_raw_name(X509_get_issuer_name(cert), pValue, pulValueLen);
 
         case CKA_SERIAL_NUMBER:
-            return do_get_raw_integer(X509_get_serialNumber(cert), pValue, pulValueLen);
+            return do_get_raw_integer(X509_get0_serialNumber(cert), pValue, pulValueLen);
 
         case CKA_VALUE:
             return do_get_raw_cert(cert, pValue, pulValueLen);

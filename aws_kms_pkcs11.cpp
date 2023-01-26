@@ -241,7 +241,7 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
     if (slots != NULL) {
         for (size_t i = 0; i < slots->size(); i++) {
             AwsKmsSlot& slot = slots->at(i);
-            X509* cert = slot.GetCertificate();
+            X509* cert = const_cast <X509 *>(slot.GetCertificate());
             if (cert != NULL) {
                 X509_free(cert);
             }
