@@ -63,7 +63,7 @@ CK_RV getCommonAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
         case CKA_LABEL: {
             string label = slot.GetLabel();
             if (label.length() == 0) {
-                    label = slot.GetKmsKeyId();
+                label = slot.GetKmsKeyId();
             }
             return copyAttribute(pValue, pulValueLen, label.c_str(), label.length());
         }
