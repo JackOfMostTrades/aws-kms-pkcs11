@@ -86,6 +86,12 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
             return copyAttribute(pValue, pulValueLen, &obj_class, sizeof(CK_OBJECT_CLASS));
         }
 
+        case CKA_SENSITIVE:
+            return copyBoolAttribute(pValue, pulValueLen, CK_TRUE);
+
+        case CKA_EXTRACTABLE:
+            return copyBoolAttribute(pValue, pulValueLen, CK_FALSE);
+
         case CKA_SIGN:
             if (key_data.GetLength() == 0) {
                 return CKR_ATTRIBUTE_TYPE_INVALID;
