@@ -401,20 +401,47 @@ CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM
     if (pInfo == NULL) {
         return CKR_ARGUMENTS_BAD;
     }
+    AwsKmsSlot& slot = slots->at(slotID);
+    CK_ULONG keySize = 0;
     switch (type) {
     case CKM_RSA_PKCS:
-        pInfo->ulMinKeySize = 2048;
-        pInfo->ulMaxKeySize = 2048;
-        pInfo->flags = CKF_SIGN;
+        switch(slot.GetKeySpec()) {
+        case Aws::KMS::Model::KeySpec::RSA_2048:
+            keySize = 2048;
+            break;
+        case Aws::KMS::Model::KeySpec::RSA_3072:
+            keySize = 3072;
+            break;
+        case Aws::KMS::Model::KeySpec::RSA_4096:
+            keySize = 4096;
+            break;
+        default:
+            // invalid combination of mechanism and KMS key spec
+            return CKR_MECHANISM_INVALID;
+        }
         break;
     case CKM_ECDSA:
-        pInfo->ulMinKeySize = 256;
-        pInfo->ulMaxKeySize = 256;
-        pInfo->flags = CKF_SIGN;
+        switch(slot.GetKeySpec()) {
+        case Aws::KMS::Model::KeySpec::ECC_NIST_P256:
+            keySize = 256;
+            break;
+        case Aws::KMS::Model::KeySpec::ECC_NIST_P384:
+            keySize = 384;
+            break;
+        case Aws::KMS::Model::KeySpec::ECC_NIST_P521:
+            keySize = 521;
+            break;
+        default:
+            // invalid combination of mechanism and KMS key spec
+            return CKR_MECHANISM_INVALID;
+        }
         break;
     default:
        return CKR_MECHANISM_INVALID;
     }
+    pInfo->ulMinKeySize = keySize;
+    pInfo->ulMaxKeySize = keySize;
+    pInfo->flags = CKF_SIGN;
     return CKR_OK;
 }
 
