@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    pSlotList = malloc(slotCount * sizeof(CK_SLOT_ID));
+    pSlotList = (CK_SLOT_ID_PTR) malloc(slotCount * sizeof(CK_SLOT_ID));
     if (pSlotList == NULL) {
         printf("Failed to allocate memory to store slot IDs.");
         return 1;
