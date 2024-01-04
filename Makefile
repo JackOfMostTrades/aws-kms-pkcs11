@@ -1,4 +1,5 @@
 # Try to locate the AWS SDK if not specified with AWS_SDK_PATH
+MACHINE := $(shell gcc -dumpmachine)
 ifeq ($(AWS_SDK_PATH),)
   ifneq ($(wildcard /usr/include/aws),)
     AWS_SDK_PATH := /usr
@@ -10,11 +11,13 @@ ifeq ($(AWS_SDK_PATH),)
 endif
 
 # Try to find which subdir of the SDK has the libraries
-ifneq ($(AWS_SDK_PATH),)
+ifneq ($(AWS_SDK_LIB_PATH),)
   ifneq ($(wildcard $(AWS_SDK_PATH)/lib/libaws-c-common.*),)
     AWS_SDK_LIB_PATH := $(addsuffix /lib,$(AWS_SDK_PATH))
   else ifneq ($(wildcard $(AWS_SDK_PATH)/lib64/libaws-c-common.*),)
     AWS_SDK_LIB_PATH := $(addsuffix /lib64,$(AWS_SDK_PATH))
+  else ifneq ($(wildcard $(AWS_SDK_PATH)/lib/$(MACHINE)/libaws-c-common.*),)
+    AWS_SDK_LIB_PATH := $(addsuffix /lib/$(MACHINE),$(AWS_SDK_PATH))
   else
     $(error neither lib or lib64 found in AWS SDK)
   endif
