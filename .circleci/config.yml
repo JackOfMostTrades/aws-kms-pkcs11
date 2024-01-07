@@ -38,12 +38,12 @@ commands:
 jobs:
   build:
     docker:
-      - image: cimg/base:stable
+      - image: cimg/base:current
     steps:
       - build_common
   build-arm64:
     machine:
-      image: ubuntu-2004:current
+      image: ubuntu-2204:current
     resource_class: arm.medium
     steps:
       - build_common
