@@ -62,6 +62,9 @@ X509* parseCertificateFromB64Der(const char* b64Der) {
 
 X509* parseCertificateFromARN(const string &ca_arn, const string &arn, const std::string &region) {
     Aws::Client::ClientConfiguration awsConfig;
+#ifdef AWS_SDK_USE_SYSTEM_PROXY
+    awsConfig.allowSystemProxy = true;
+#endif
 
     if (!region.empty())
 	    awsConfig.region = region;
