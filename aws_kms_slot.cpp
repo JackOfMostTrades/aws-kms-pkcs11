@@ -34,6 +34,9 @@ void AwsKmsSlot::FetchPublicKeyData() {
         return;
     }
     Aws::Client::ClientConfiguration awsConfig;
+#ifdef AWS_SDK_USE_SYSTEM_PROXY
+    awsConfig.allowSystemProxy = true;
+#endif
     if (!this->aws_region.empty()) {
         awsConfig.region = this->aws_region;
     }
