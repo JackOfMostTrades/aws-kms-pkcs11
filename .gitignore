@@ -1,4 +1,5 @@
 .idea/
 *.iml
 *.so
+*.dylib
 aws_kms_pkcs11_test

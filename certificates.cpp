@@ -67,7 +67,7 @@ X509* parseCertificateFromARN(const string &ca_arn, const string &arn, const std
 #endif
 
     if (!region.empty())
-	    awsConfig.region = region;
+        awsConfig.region = region;
     Aws::ACMPCA::ACMPCAClient acmpca(awsConfig);
     Aws::ACMPCA::Model::GetCertificateRequest req;
 
@@ -75,14 +75,14 @@ X509* parseCertificateFromARN(const string &ca_arn, const string &arn, const std
     req.SetCertificateAuthorityArn(ca_arn);
     auto res = acmpca.GetCertificate(req);
     if (!res.IsSuccess()) {
-	debug("Failed to retreive certificate %s from CA %s\n", arn, ca_arn);
-	return NULL;
+        debug("Failed to retrieve certificate %s from CA %s\n", arn.c_str(), ca_arn.c_str());
+        return NULL;
     }
     auto pem = res.GetResult().GetCertificate();
     auto bio = BIO_new_mem_buf((char *)pem.c_str(), -1);
     if (!bio) {
-	    debug("Failed to allocate BIO for cert\n");
-	    return NULL;
+        debug("Failed to allocate BIO for cert\n");
+        return NULL;
     }
     auto cert = PEM_read_bio_X509(bio, NULL, 0, NULL);
     BIO_free(bio);
