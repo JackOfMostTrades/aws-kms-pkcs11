@@ -162,6 +162,33 @@ Now, assuming you have a key names "my-signing-key" configured with a certificat
 pesign -i <input_file> -o <output_file> -s -n my-cert-db -c my-signing-key -t my-signing-key
 ```
 
+## Localstack support
+
+If you want to use localstack to test, you can do so using the `AWS_ENDPOINT_URL` environment variable. To test that, just make sure localstack is running at and then there's an example of that:
+
+```bash
+export AWS_ENDPOINT_URL=http://localhost:4566
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_ACCESS_KEY_ID=test
+
+# make sure that the localstack KMS key is created
+awslocal kms create-key --description "mykey" --key-usage SIGN_VERIFY --key-spec RSA_4096
+# make sure the configuration on config.json is pointing to the correct key id
+
+openssl req -new -key pkcs11:token=MyImportedKey6 -keyform engine -engine pkcs11 -out mycert.csr
+```
+
+And you should see in localstack logs something like:
+
+```
+2024-06-13T15:35:28.938  INFO --- [-functhread6] hypercorn.error            : Running on https://0.0.0.0:4566 (CTRL + C to quit)
+2024-06-13T15:35:28.938  INFO --- [-functhread6] hypercorn.error            : Running on https://0.0.0.0:4566 (CTRL + C to quit)
+2024-06-13T15:35:29.209  INFO --- [  MainThread] localstack.utils.bootstrap : Execution of "start_runtime_components" took 602.18ms
+Ready.
+2024-06-13T15:38:04.414  INFO --- [   asgi_gw_0] localstack.request.aws     : AWS kms.CreateKey => 200
+2024-06-13T15:38:05.016  INFO --- [   asgi_gw_0] localstack.request.aws     : AWS kms.GetPublicKey => 200
+2024-06-13T15:38:05.214  INFO --- [   asgi_gw_0] localstack.request.aws     : AWS kms.Sign => 200
+```
 
 # Configuration
 

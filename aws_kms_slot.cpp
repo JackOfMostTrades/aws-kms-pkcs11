@@ -5,6 +5,7 @@
 #include <string>
 
 #include "aws_kms_slot.h"
+#include "util.h"
 #include "debug.h"
 
 using std::string;
@@ -33,13 +34,7 @@ void AwsKmsSlot::FetchPublicKeyData() {
     if (this->public_key_data_fetched) {
         return;
     }
-    Aws::Client::ClientConfiguration awsConfig;
-#ifdef AWS_SDK_USE_SYSTEM_PROXY
-    awsConfig.allowSystemProxy = true;
-#endif
-    if (!this->aws_region.empty()) {
-        awsConfig.region = this->aws_region;
-    }
+    Aws::Client::ClientConfiguration awsConfig = create_aws_config(this->aws_region);
     Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::GetPublicKeyRequest req;
 

@@ -19,6 +19,7 @@
 #include "aws_kms_slot.h"
 #include "certificates.h"
 #include "debug.h"
+#include "util.h"
 #include "unsupported.h"
 
 using std::string;
@@ -202,10 +203,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 
     if (slots->size() == 0) {
         debug("No KMS key ids configured; listing all keys.");
-        Aws::Client::ClientConfiguration awsConfig;
-#ifdef AWS_SDK_USE_SYSTEM_PROXY
-        awsConfig.allowSystemProxy = true;
-#endif
+        Aws::Client::ClientConfiguration awsConfig = create_aws_config(glob_aws_region);
+
         Aws::KMS::KMSClient kms(awsConfig);
         Aws::KMS::Model::ListKeysRequest req;
         req.SetLimit(1000);
@@ -753,13 +752,8 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
             return CKR_ARGUMENTS_BAD;
     }
 
-    Aws::Client::ClientConfiguration awsConfig;
-#ifdef AWS_SDK_USE_SYSTEM_PROXY
-    awsConfig.allowSystemProxy = true;
-#endif
-    if (slot.GetAwsRegion().length() > 0) {
-        awsConfig.region = slot.GetAwsRegion();
-    }
+    Aws::Client::ClientConfiguration awsConfig = create_aws_config(slot.GetAwsRegion());
+
     Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::SignOutcome res = kms.Sign(req);
     if (!res.IsSuccess()) {
