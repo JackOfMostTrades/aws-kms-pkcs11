@@ -9,6 +9,7 @@
 #include <aws/acm-pca/model/GetCertificateResult.h>
 
 #include "debug.h"
+#include "util.h"
 #include "openssl_compat.h"
 
 using std::string;
@@ -61,13 +62,7 @@ X509* parseCertificateFromB64Der(const char* b64Der) {
 }
 
 X509* parseCertificateFromARN(const string &ca_arn, const string &arn, const std::string &region) {
-    Aws::Client::ClientConfiguration awsConfig;
-#ifdef AWS_SDK_USE_SYSTEM_PROXY
-    awsConfig.allowSystemProxy = true;
-#endif
-
-    if (!region.empty())
-	    awsConfig.region = region;
+    Aws::Client::ClientConfiguration awsConfig = create_aws_config(region);
     Aws::ACMPCA::ACMPCAClient acmpca(awsConfig);
     Aws::ACMPCA::Model::GetCertificateRequest req;
 

@@ -164,7 +164,7 @@ else
 endif
 
 # Source files
-SRC = attributes.cpp aws_kms_pkcs11.cpp certificates.cpp unsupported.cpp debug.cpp aws_kms_slot.cpp
+SRC = attributes.cpp aws_kms_pkcs11.cpp certificates.cpp unsupported.cpp debug.cpp util.cpp aws_kms_slot.cpp
 
 all: aws_kms_pkcs11.so
 
@@ -183,7 +183,7 @@ aws_kms_pkcs11_test: aws_kms_pkcs11_test.c aws_kms_pkcs11.so
 	g++ -g -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 \
         aws_kms_pkcs11_test.c -o aws_kms_pkcs11_test -ldl
 
-aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp attributes.cpp certificates.cpp
+aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp util.cpp attributes.cpp certificates.cpp
 	g++ -shared -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 $(SRC) \
 	    -o aws_kms_pkcs11.so $(STATIC_LIBS) $(LIBS) -lcrypto -ljson-c -lcurl
 
