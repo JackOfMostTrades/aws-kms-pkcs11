@@ -5,7 +5,7 @@ commands:
     steps:
       - checkout
       - run:
-          command: sudo apt-get update && sudo apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev libopencryptoki-dev libjson-c-dev libp11-kit-dev
+          command: sudo apt-get update && sudo bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev libopencryptoki-dev libjson-c-dev libp11-kit-dev'
       - restore_cache:
           key: aws-sdk-cpp-1.9.332-{{arch}}
       - run:
