@@ -399,6 +399,10 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
+CK_RV C_GetSessionInfo(CK_SESSION_HANDLE, CK_SESSION_INFO_PTR) {
+    return CKR_OK;
+}
+
 CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo) {
     if (pInfo == NULL) {
         return CKR_ARGUMENTS_BAD;
@@ -874,4 +878,3 @@ CK_RV C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR ppFunctionList) {
     *ppFunctionList = &function_list;
     return CKR_OK;
 }
-
