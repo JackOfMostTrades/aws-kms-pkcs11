@@ -399,7 +399,15 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     return CKR_FUNCTION_FAILED;
 }
 
-CK_RV C_GetSessionInfo(CK_SESSION_HANDLE, CK_SESSION_INFO_PTR) {
+CK_RV C_GetSessionInfo(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR pInfo) {
+    CkSession *session = (CkSession*)hSession;
+    if (session == NULL) {
+        return CKR_SESSION_HANDLE_INVALID;
+    }
+    memset(pInfo, 0, sizeof(*pInfo));
+    pInfo->slotID = session->slot_id;
+    pInfo->state = CKS_RW_USER_FUNCTIONS;
+    pInfo->flags = CKF_RW_SESSION | CKF_SERIAL_SESSION;
     return CKR_OK;
 }
 
