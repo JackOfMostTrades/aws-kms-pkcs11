@@ -188,7 +188,8 @@ aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp
 	    -o aws_kms_pkcs11.so $(STATIC_LIBS) $(LIBS) -lcrypto -ljson-c -lcurl -lz
 
 install: aws_kms_pkcs11.so
-	cp aws_kms_pkcs11.so $(PKCS11_MOD_PATH)/
+	mkdir -p $(DESTDIR)$(PKCS11_MOD_PATH)
+	cp aws_kms_pkcs11.so $(DESTDIR)$(PKCS11_MOD_PATH)/
 
 uninstall:
-	rm -f $(PKCS11_MOD_PATH)/aws_kms_pkcs11.so
+	rm -f $(DESTDIR)$(PKCS11_MOD_PATH)/aws_kms_pkcs11.so
