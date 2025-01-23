@@ -11,7 +11,7 @@ ifeq ($(AWS_SDK_PATH),)
 endif
 
 # Try to find which subdir of the SDK has the libraries
-ifneq ($(AWS_SDK_PATH),)
+ifeq ($(AWS_SDK_LIB_PATH),)
   ifneq ($(wildcard $(AWS_SDK_PATH)/lib/libaws-c-common.*),)
     AWS_SDK_LIB_PATH := $(addsuffix /lib,$(AWS_SDK_PATH))
   else ifneq ($(wildcard $(AWS_SDK_PATH)/lib64/libaws-c-common.*),)

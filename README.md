@@ -234,6 +234,7 @@ The easiest way to install the provider is to download the binary artifact from 
 The Makefile in this repo tries to intuit the location of the various components and libraries it needs. This can be controlled by the following variables:
 
 `AWS_SDK_PATH`       : Path to the AWS sdk  
+`AWS_SDK_LIB_PATH`   : Path to the AWS sdk libraries (optional)
 `PKCS11_INC`         : Path to the pkcs11.h header file  
 `JSON_C_INC`         : Path to the json-c library headers  
 
