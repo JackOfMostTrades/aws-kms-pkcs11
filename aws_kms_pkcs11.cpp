@@ -40,6 +40,7 @@ typedef struct _session {
     unsigned long find_objects_index;
 
     CK_MECHANISM_TYPE sign_mechanism;
+    CK_RSA_PKCS_PSS_PARAMS pss_params;
 } CkSession;
 
 static Aws::SDKOptions options;
@@ -642,6 +643,12 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJ
     }
     session->sign_mechanism = pMechanism->mechanism;
 
+    if (pMechanism->mechanism == CKM_RSA_PKCS_PSS && pMechanism->ulParameterLen == sizeof(CK_RSA_PKCS_PSS_PARAMS)) {
+        memcpy(&session->pss_params, pMechanism->pParameter, pMechanism->ulParameterLen);
+    } else {
+        memset(&session->pss_params, 0, sizeof(CK_RSA_PKCS_PSS_PARAMS));
+    }
+
     return CKR_OK;
 }
 
@@ -676,12 +683,14 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
     }
 
     if (pData == NULL_PTR || pulSignatureLen == NULL_PTR) {
+        debug("Null pointers in C_Sign");
         return CKR_ARGUMENTS_BAD;
     }
 
     AwsKmsSlot& slot = slots->at(session->slot_id);
     Aws::Utils::ByteBuffer key_data = slot.GetPublicKeyData();
     if (key_data.GetLength() == 0) {
+        debug("0 key length in C_Sign");
         return CKR_ARGUMENTS_BAD;
     }
 
@@ -735,6 +744,32 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
                     return CKR_ARGUMENTS_BAD;
             }
             break;
+        case CKM_RSA_PKCS_PSS:
+            if (session->pss_params.hashAlg == CKM_SHA256) {
+                    if (ulDataLen > 32) {
+                    debug("Data too large (%d) for requested PSS hash algorithm %d", ulDataLen, session->pss_params.hashAlg);
+                    return CKR_ARGUMENTS_BAD;
+                }
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PSS_SHA_256);
+            } else if (session->pss_params.hashAlg == CKM_SHA384) {
+                    if (ulDataLen > 48) {
+                    debug("Data too large (%d) for requested PSS hash algorithm %d", ulDataLen, session->pss_params.hashAlg);
+                    return CKR_ARGUMENTS_BAD;
+                }
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PSS_SHA_384);
+            } else if (session->pss_params.hashAlg == CKM_SHA512) {
+                    if (ulDataLen > 64) {
+                    debug("Data too large (%d) for requested PSS hash algorithm %d", ulDataLen, session->pss_params.hashAlg);
+                    return CKR_ARGUMENTS_BAD;
+                }
+                req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::RSASSA_PSS_SHA_512);
+            } else {
+                    debug("Unsupported PSS hash algorithm: %d", session->pss_params.hashAlg);
+                    return CKR_ARGUMENTS_BAD;
+            }
+            req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
+            req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
+            break;
         case CKM_RSA_PKCS:
             if (has_prefix(pData, ulDataLen, rsa_id_sha256, sizeof(rsa_id_sha256))) {
                 req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData + sizeof(rsa_id_sha256), ulDataLen - sizeof(rsa_id_sha256))));
@@ -761,6 +796,7 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
             req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
             break;
         default:
+            debug("Bad sign mechanism: %d", session->sign_mechanism);
             return CKR_ARGUMENTS_BAD;
     }
 
