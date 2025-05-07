@@ -70,7 +70,7 @@ X509* parseCertificateFromARN(const string &ca_arn, const string &arn, const std
     req.SetCertificateAuthorityArn(ca_arn);
     auto res = acmpca.GetCertificate(req);
     if (!res.IsSuccess()) {
-	debug("Failed to retreive certificate %s from CA %s\n", arn, ca_arn);
+       debug("Failed to retreive certificate %s from CA %s\n", arn.c_str(), ca_arn.c_str());
 	return NULL;
     }
     auto pem = res.GetResult().GetCertificate();

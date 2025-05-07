@@ -1,5 +1,31 @@
 # Try to locate the AWS SDK if not specified with AWS_SDK_PATH
 MACHINE := $(shell gcc -dumpmachine)
+# macOS-specific dependency detection
+ifeq ($(shell uname), Darwin)
+  # OpenSSL via Homebrew
+  OPENSSL_PREFIX := $(shell brew --prefix openssl@3 2>/dev/null)
+  ifneq ($(OPENSSL_PREFIX),)
+    OPENSSL_INC := -I$(OPENSSL_PREFIX)/include
+    OPENSSL_LIB := -L$(OPENSSL_PREFIX)/lib
+  else
+    $(warning OpenSSL not found via Homebrew. Try: brew install openssl@3)
+  endif
+
+  # json-c via Homebrew
+  JSONC_PREFIX := $(shell brew --prefix json-c 2>/dev/null)
+  ifneq ($(JSONC_PREFIX),)
+	JSON_C_INC := -I$(JSONC_PREFIX)/include -I$(JSONC_PREFIX)/include/json-c
+    JSON_C_LIB := -L$(JSONC_PREFIX)/lib
+  else
+    $(warning json-c not found via Homebrew. Try: brew install json-c)
+  endif
+  OSX_FRAMEWORKS := \
+    -framework CoreFoundation \
+    -framework Security \
+    -framework SystemConfiguration \
+    -framework CoreServices
+endif
+
 ifeq ($(AWS_SDK_PATH),)
   ifneq ($(wildcard /usr/include/aws),)
     AWS_SDK_PATH := /usr
@@ -140,7 +166,15 @@ else
 endif
 ifeq ($(AWS_SDK_C_STATIC),y)
   $(info Using C SDK static libraries)
-  STATIC_LIBS += -Wl,--start-group
+  ifneq ($(shell uname), Darwin)
+	GROUP_START := -Wl,--start-group
+	GROUP_END   := -Wl,--end-group
+  else
+	GROUP_START :=
+	GROUP_END   :=
+  endif
+
+  STATIC_LIBS += $(GROUP_START)
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-checksums.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-common.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-event-stream.a
@@ -153,7 +187,7 @@ ifeq ($(AWS_SDK_C_STATIC),y)
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-s3.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libaws-c-sdkutils.a
   STATIC_LIBS += $(AWS_SDK_LIB_PATH)/libs2n.a
-  STATIC_LIBS += -Wl,--end-group
+  STATIC_LIBS += $(GROUP_END)
 else ifeq ($(AWS_SDK_C_STATIC),n)
   $(info Using C SDK dynamic libraries)
   LIBS += $(AWS_SDK_LIB_PATH)/libaws-checksums.so
@@ -176,16 +210,16 @@ test: aws_kms_pkcs11_test certificates_test
 	AWS_KMS_PKCS11_DEBUG=1 ./aws_kms_pkcs11_test
 
 certificates_test: certificates.cpp certificates_test.cpp
-	g++ -g -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 \
-        debug.cpp util.cpp certificates.cpp certificates_test.cpp -o certificates_test $(STATIC_LIBS) $(LIBS) -lcrypto -ljson-c -lcurl -lz
+	g++ -g -fPIC -Wall -I$(AWS_SDK_PATH)/include $(OSX_FRAMEWORKS) $(OPENSSL_INC) $(JSON_C_INC) $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 \
+        debug.cpp util.cpp certificates.cpp certificates_test.cpp -o certificates_test $(STATIC_LIBS) $(LIBS) $(OPENSSL_LIB) $(JSON_C_LIB) -lcrypto -ljson-c -lcurl -lz
 
 aws_kms_pkcs11_test: aws_kms_pkcs11_test.c aws_kms_pkcs11.so
-	g++ -g -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 \
+	g++ -g -fPIC -Wall -I$(AWS_SDK_PATH)/include $(OSX_FRAMEWORKS) $(OPENSSL_INC) $(JSON_C_INC) $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 \
         aws_kms_pkcs11_test.c -o aws_kms_pkcs11_test -ldl
 
 aws_kms_pkcs11.so: aws_kms_pkcs11.cpp unsupported.cpp aws_kms_slot.cpp debug.cpp util.cpp attributes.cpp certificates.cpp
-	g++ -shared -fPIC -Wall -I$(AWS_SDK_PATH)/include $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 $(SRC) \
-	    -o aws_kms_pkcs11.so $(STATIC_LIBS) $(LIBS) -lcrypto -ljson-c -lcurl -lz
+	g++ -shared -fPIC -Wall -I$(AWS_SDK_PATH)/include $(OSX_FRAMEWORKS) $(OPENSSL_INC) $(JSON_C_INC) $(PKCS11_INC) $(JSON_C_INC) $(PROXY_CFLAGS) -fno-exceptions -std=c++17 $(SRC) \
+	    -o aws_kms_pkcs11.so $(STATIC_LIBS) $(LIBS) $(OPENSSL_LIB) $(JSON_C_LIB) -lcrypto -ljson-c -lcurl -lz
 
 install: aws_kms_pkcs11.so
 	mkdir -p $(DESTDIR)$(PKCS11_MOD_PATH)
