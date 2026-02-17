@@ -22,13 +22,12 @@
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/crypto.h>
 
-// This class replaces the current default OpenSSL context with a vanilla one, putting things back in the destructor
+// This class replaces the current default OpenSSL context with the provided one, putting things back in the destructor
 class OsslDefaultCtxGuard {
 public:
-    OsslDefaultCtxGuard() {
-        ossl_new_ctx = OSSL_LIB_CTX_new();
-        if (ossl_new_ctx) {
-            ossl_old_ctx = OSSL_LIB_CTX_set0_default(ossl_new_ctx);
+    OsslDefaultCtxGuard(OSSL_LIB_CTX *ctx) {
+        if (ctx) {
+            ossl_old_ctx = OSSL_LIB_CTX_set0_default(ctx);
         }
     }
     ~OsslDefaultCtxGuard() {
@@ -36,15 +35,10 @@ public:
             OSSL_LIB_CTX_set0_default(ossl_old_ctx);
             ossl_old_ctx = nullptr;
         }
-        if (ossl_new_ctx) {
-            OSSL_LIB_CTX_free(ossl_new_ctx);
-            ossl_new_ctx = nullptr;
-        }
     }
     OsslDefaultCtxGuard(const OsslDefaultCtxGuard&) = delete;
     OsslDefaultCtxGuard& operator=(const OsslDefaultCtxGuard&) = delete;
 private:
-    OSSL_LIB_CTX *ossl_new_ctx = nullptr;
     OSSL_LIB_CTX *ossl_old_ctx = nullptr;
 };
 
@@ -52,7 +46,7 @@ private:
 // OpenSSL < 3.0 does not have any global context that needs to be reset
 class OsslDefaultCtxGuard {
 public:
-    OsslDefaultCtxGuard() = default;
+    OsslDefaultCtxGuard(void*) {}
     ~OsslDefaultCtxGuard() = default;
     OsslDefaultCtxGuard(const OsslDefaultCtxGuard&) = delete;
     OsslDefaultCtxGuard& operator=(const OsslDefaultCtxGuard&) = delete;
