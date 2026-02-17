@@ -34,6 +34,7 @@ void AwsKmsSlot::FetchPublicKeyData() {
     if (this->public_key_data_fetched) {
         return;
     }
+
     Aws::Client::ClientConfiguration awsConfig = create_aws_config(this->aws_region);
     Aws::KMS::KMSClient kms(awsConfig);
     Aws::KMS::Model::GetPublicKeyRequest req;
