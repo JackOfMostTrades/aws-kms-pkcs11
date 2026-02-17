@@ -46,6 +46,11 @@ typedef struct _session {
 static Aws::SDKOptions options;
 static vector<AwsKmsSlot>* slots = NULL;
 static vector<CkSession*>* active_sessions = NULL;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+OSSL_LIB_CTX* ossl_empty_ctx = NULL;
+#else
+void* ossl_empty_ctx = NULL;
+#endif
 
 static CK_RV load_config(json_object** config) {
     vector<string> config_paths;
@@ -111,7 +116,10 @@ static CK_RV load_config(json_object** config) {
 }
 
 CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        ossl_empty_ctx = OSSL_LIB_CTX_new();
+    #endif
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     CK_RV result = CKR_OK;
 
@@ -248,7 +256,7 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 }
 
 CK_RV C_Finalize(CK_VOID_PTR pReserved) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     debug("Cleaning PKCS#11 provider.");
 
@@ -274,6 +282,11 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
 
     Aws::SDKOptions options;
     Aws::ShutdownAPI(options);
+
+    #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        OSSL_LIB_CTX_free(ossl_empty_ctx);
+        ossl_empty_ctx = NULL;
+    #endif
 
     return CKR_OK;
 }
@@ -417,7 +430,7 @@ CK_RV C_GetSessionInfo(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR pInfo) {
 }
 
 CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     if (pInfo == NULL) {
         return CKR_ARGUMENTS_BAD;
@@ -567,7 +580,7 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
 }
 
 CK_RV C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR phObject, CK_ULONG ulMaxObjectCount, CK_ULONG_PTR pulObjectCount) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
@@ -613,7 +626,7 @@ CK_RV C_FindObjectsFinal(CK_SESSION_HANDLE hSession) {
 }
 
 CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
@@ -687,7 +700,7 @@ static CK_BBOOL has_prefix(CK_BYTE_PTR pData, CK_ULONG ulDataLen, const unsigned
 }
 
 CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen) {
-    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+    OsslDefaultCtxGuard ctx_guard(ossl_empty_ctx); // RAII: use a default OpenSSL context
 
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
