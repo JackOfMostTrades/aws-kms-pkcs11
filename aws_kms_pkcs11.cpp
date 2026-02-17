@@ -111,6 +111,8 @@ static CK_RV load_config(json_object** config) {
 }
 
 CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     CK_RV result = CKR_OK;
 
     debug_enabled = CK_FALSE;
@@ -246,6 +248,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 }
 
 CK_RV C_Finalize(CK_VOID_PTR pReserved) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     debug("Cleaning PKCS#11 provider.");
 
     if (slots != NULL) {
@@ -413,6 +417,8 @@ CK_RV C_GetSessionInfo(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR pInfo) {
 }
 
 CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     if (pInfo == NULL) {
         return CKR_ARGUMENTS_BAD;
     }
@@ -561,6 +567,8 @@ static CK_BBOOL matches_template(CkSession* session, AwsKmsSlot& slot, CK_OBJECT
 }
 
 CK_RV C_FindObjects(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE_PTR phObject, CK_ULONG ulMaxObjectCount, CK_ULONG_PTR pulObjectCount) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
         return CKR_SESSION_HANDLE_INVALID;
@@ -605,6 +613,8 @@ CK_RV C_FindObjectsFinal(CK_SESSION_HANDLE hSession) {
 }
 
 CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
         return CKR_SESSION_HANDLE_INVALID;
@@ -677,6 +687,8 @@ static CK_BBOOL has_prefix(CK_BYTE_PTR pData, CK_ULONG ulDataLen, const unsigned
 }
 
 CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen) {
+    OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
+
     CkSession *session = (CkSession*)hSession;
     if (session == NULL) {
         return CKR_SESSION_HANDLE_INVALID;
