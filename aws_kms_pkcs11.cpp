@@ -248,10 +248,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
     return result;
 }
 
-CK_RV C_Finalize(CK_VOID_PTR pReserved) {
+static void C_Finalize_Inner() {
     OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
-
-    debug("Cleaning PKCS#11 provider.");
 
     if (slots != NULL) {
         for (size_t i = 0; i < slots->size(); i++) {
@@ -275,9 +273,14 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
 
     Aws::SDKOptions options;
     Aws::ShutdownAPI(options);
+}
 
+CK_RV C_Finalize(CK_VOID_PTR pReserved) {
+    debug("Cleaning PKCS#11 provider.");
+    // Do most of the finalize inside this inner function which has the Ossl context guar, so that we can
+    // call Fini() here to ensure we do not currently hold the guard as it is freed.
+    C_Finalize_Inner();
     OsslDefaultCtxGuard::Fini();
-
     return CKR_OK;
 }
 
