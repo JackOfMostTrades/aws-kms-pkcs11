@@ -116,11 +116,13 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 
     CK_RV result = CKR_OK;
 
-    debug_enabled = CK_FALSE;
+    debug_file = NULL;
     const char* debug_env_var = getenv("AWS_KMS_PKCS11_DEBUG");
     if (debug_env_var != NULL) {
-        if (strlen(debug_env_var) > 0) {
-            debug_enabled = CK_TRUE;
+        if (strcmp(debug_env_var, "stderr") == 0) {
+            debug_file = stderr;
+        } else if (strlen(debug_env_var) > 0) {
+            debug_file = stdout;
             debug("Debug enabled.");
         }
     }
