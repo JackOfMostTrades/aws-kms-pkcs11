@@ -1,3 +1,4 @@
+#include <stdio.h>
 
-extern bool debug_enabled;
+extern FILE *debug_file;
 void debug(const char *fmt, ...);

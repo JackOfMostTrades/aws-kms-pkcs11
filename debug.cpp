@@ -4,11 +4,11 @@
 #include <stdio.h>
 #include "debug.h"
 
-bool debug_enabled = false;
+FILE *debug_file = NULL;
 void debug(const char *fmt, ...) {
     va_list args;
 
-    if (!debug_enabled) {
+    if (debug_file == NULL) {
         return;
     }
 
@@ -19,7 +19,7 @@ void debug(const char *fmt, ...) {
     longer_fmt[strlen(fmt)+10] = '\0';
 
     va_start(args, fmt);
-    vprintf(longer_fmt, args);
+    vfprintf(debug_file, longer_fmt, args);
     va_end(args);
 
     free(longer_fmt);
