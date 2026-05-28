@@ -30,7 +30,72 @@ CK_RV get_and_dump_attribute(CK_FUNCTION_LIST* f, CK_SESSION_HANDLE session, CK_
 
     dump_bytes(name, (const unsigned char*)attrs[0].pValue, attrs[0].ulValueLen);
     free(attrs[0].pValue);
+    return CKR_OK;
+}
 
+// Exercises the multi-part signing path (C_SignInit -> C_SignUpdate* ->
+// C_SignFinal) with the same key and mechanism used by the single-shot test.
+// The message is fed in several chunks -- including a zero-length update -- to
+// cover the streaming buffer accumulation, and C_SignFinal is called with the
+// two-call (size query, then fetch) pattern. This is a shallow smoke test: it
+// only checks the calls succeed, don't segfault, and yield a non-empty
+// signature. It deliberately does NOT compare the length/bytes against the
+// single-shot signature, since some algorithms (e.g. ECDSA) produce signatures
+// whose DER length varies between invocations.
+CK_RV test_sign_multipart(CK_FUNCTION_LIST* f, CK_SESSION_HANDLE session, CK_OBJECT_HANDLE obj,
+                          CK_MECHANISM_PTR mechanism, const unsigned char* data, CK_ULONG data_len) {
+    
+    CK_RV res = f->C_SignInit(session, mechanism, obj);
+    if (res != CKR_OK) {
+        printf("Fail C_SignInit (multipart), res=%ld\n", res);
+        return res;
+    }
+    CK_ULONG first = data_len / 2;
+    res = f->C_SignUpdate(session, (CK_BYTE_PTR)data, first);
+    if (res != CKR_OK) {
+        printf("Fail C_SignUpdate (chunk 1), res=%ld\n", res);
+        return res;
+    }
+    
+    // Zero-length update should be a no-op and must not disturb the buffer.
+    res = f->C_SignUpdate(session, (CK_BYTE_PTR)data, 0);
+    if (res != CKR_OK) {
+        printf("Fail C_SignUpdate (zero-length), res=%ld\n", res);
+        return res;
+    }
+    res = f->C_SignUpdate(session, (CK_BYTE_PTR)(data + first), data_len - first);
+    if (res != CKR_OK) {
+        printf("Fail C_SignUpdate (chunk 2), res=%ld\n", res);
+        return res;
+    }
+    
+    // First call with a NULL buffer to learn the signature size...
+    CK_ULONG siglen = 0;
+    res = f->C_SignFinal(session, NULL_PTR, &siglen);
+    if (res != CKR_OK) {
+        printf("Failed to call C_SignFinal to get signature size, res=%ld\n", res);
+        return res;
+    }
+    if (siglen == 0) {
+        printf("C_SignFinal reported a zero-length signature\n");
+        return CKR_FUNCTION_FAILED;
+    }
+    
+    // ...then again to fetch the signature itself.
+    unsigned char* sig = (unsigned char*)malloc(siglen);
+    if (sig == NULL) {
+        printf("Failed to allocate memory for the multipart signature.\n");
+        return CKR_HOST_MEMORY;
+    }
+    res = f->C_SignFinal(session, sig, &siglen);
+    if (res != CKR_OK) {
+        printf("Fail C_SignFinal, res=%ld\n", res);
+        free(sig);
+        return res;
+    }
+    
+    dump_bytes("multipart_sig", sig, siglen);
+    free(sig);
     return CKR_OK;
 }
 
@@ -130,10 +195,17 @@ CK_RV test_all_keys_in_slot(CK_FUNCTION_LIST* f, CK_SLOT_ID slotID) {
         };
 
         CK_MECHANISM mechanism;
+        mechanism.pParameter = NULL_PTR;
+        mechanism.ulParameterLen = 0;
         if (key_type == CKK_RSA) {
             mechanism.mechanism = CKM_RSA_PKCS;
         } else if (key_type == CKK_ECDSA) {
             mechanism.mechanism = CKM_ECDSA;
+        } else if (key_type == CKK_ML_DSA) {
+            mechanism.mechanism = CKM_ML_DSA;
+        } else {
+            printf("Skipping object: unsupported key type %ld\n", (long)key_type);
+            continue;
         }
         res = f->C_SignInit(session, &mechanism, obj);
         if (res != CKR_OK) {
@@ -157,6 +229,13 @@ CK_RV test_all_keys_in_slot(CK_FUNCTION_LIST* f, CK_SLOT_ID slotID) {
         }
         dump_bytes("sig", sig, siglen);
         free(sig);
+        // Also exercise the multi-part (C_SignUpdate/C_SignFinal) path with the
+        // same key and mechanism.
+        res = test_sign_multipart(f, session, obj, &mechanism, DATA, sizeof(DATA));
+        if (res != CKR_OK) {
+            printf("Fail multipart sign test\n");
+            return res;
+        }
     }
     res = f->C_FindObjectsFinal(session);
     if (res != CKR_OK) {
