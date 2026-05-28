@@ -69,6 +69,51 @@ CK_RV getCommonAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
             return copyAttribute(pValue, pulValueLen, label.c_str(), label.length());
         }
 
+        case CKA_COPYABLE:
+            return copyBoolAttribute(pValue, pulValueLen, CK_FALSE);
+
+        case CKA_PUBLIC_KEY_INFO: {
+            // KMS GetPublicKey returns the SubjectPublicKeyInfo DER directly,
+            // which is exactly what CKA_PUBLIC_KEY_INFO is supposed to be.
+            Aws::Utils::ByteBuffer key_data = slot.GetPublicKeyData();
+            if (key_data.GetLength() == 0) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            return copyAttribute(pValue, pulValueLen,
+                                 key_data.GetUnderlyingData(), key_data.GetLength());
+        }
+
+        case CKA_PARAMETER_SET: {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+            // ML-DSA parameter set identifier per PKCS#11 v3.2.
+            // Inspect the SPKI to determine which variant.
+            Aws::Utils::ByteBuffer key_data = slot.GetPublicKeyData();
+            if (key_data.GetLength() == 0) {
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            const unsigned char* pubkey_bytes = key_data.GetUnderlyingData();
+            EVP_PKEY* pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
+            if (pkey == NULL) {
+                return CKR_FUNCTION_FAILED;
+            }
+            CK_ULONG param_set;
+            if (EVP_PKEY_is_a(pkey, "ML-DSA-44")) {
+                param_set = CKP_ML_DSA_44;
+            } else if (EVP_PKEY_is_a(pkey, "ML-DSA-65")) {
+                param_set = CKP_ML_DSA_65;
+            } else if (EVP_PKEY_is_a(pkey, "ML-DSA-87")) {
+                param_set = CKP_ML_DSA_87;
+            } else {
+                EVP_PKEY_free(pkey);
+                return CKR_ATTRIBUTE_TYPE_INVALID;
+            }
+            EVP_PKEY_free(pkey);
+            return copyAttribute(pValue, pulValueLen, &param_set, sizeof(CK_ULONG));
+#else
+            return CKR_ATTRIBUTE_TYPE_INVALID;
+#endif
+        }
+
         default:
             *pulValueLen = CK_UNAVAILABLE_INFORMATION;
             return CKR_ATTRIBUTE_TYPE_INVALID;
@@ -109,16 +154,20 @@ CK_RV getKmsKeyAttributeValue(AwsKmsSlot& slot, CK_ATTRIBUTE_TYPE attr, CK_VOID_
             }
 
             CK_OBJECT_CLASS key_type;
-            switch (EVP_PKEY_base_id(pkey)) {
-                case EVP_PKEY_RSA:
-                    key_type = CKK_RSA;
-                    break;
-                case EVP_PKEY_EC:
-                    key_type = CKK_ECDSA;
-                    break;
-                default:
-                    EVP_PKEY_free(pkey);
-                    return CKR_ATTRIBUTE_TYPE_INVALID;
+            int base_id = EVP_PKEY_base_id(pkey);
+            if (base_id == EVP_PKEY_RSA) {
+                key_type = CKK_RSA;
+            } else if (base_id == EVP_PKEY_EC) {
+                key_type = CKK_ECDSA;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+            } else if (EVP_PKEY_is_a(pkey, "ML-DSA-44")
+                    || EVP_PKEY_is_a(pkey, "ML-DSA-65")
+                    || EVP_PKEY_is_a(pkey, "ML-DSA-87")) {
+                key_type = CKK_ML_DSA;
+#endif
+            } else {
+                EVP_PKEY_free(pkey);
+                return CKR_ATTRIBUTE_TYPE_INVALID;
             }
             EVP_PKEY_free(pkey);
             return copyAttribute(pValue, pulValueLen, &key_type, sizeof(CK_OBJECT_CLASS));

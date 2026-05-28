@@ -10,9 +10,22 @@
 #include <vector>
 
 #include <aws/core/Aws.h>
+#include <aws/core/VersionConfig.h>
 #include <aws/kms/KMSClient.h>
 #include <aws/kms/model/ListKeysRequest.h>
 #include <aws/kms/model/SignRequest.h>
+
+// AWS KMS ML-DSA support — KeySpec::ML_DSA_{44,65,87} and
+// SigningAlgorithmSpec::ML_DSA_SHAKE_256 — arrived with the June 2025 KMS
+// model update. Gate the ML-DSA paths behind an SDK version check so older
+// SDKs build the module without ML-DSA (behaving exactly as before). The
+// threshold is set conservatively to a known-good release; it can be lowered
+// to the exact June-2025 patch to enable ML-DSA on more SDK versions.
+#if (AWS_SDK_VERSION_MAJOR > 1) || \
+    (AWS_SDK_VERSION_MAJOR == 1 && AWS_SDK_VERSION_MINOR > 11) || \
+    (AWS_SDK_VERSION_MAJOR == 1 && AWS_SDK_VERSION_MINOR == 11 && AWS_SDK_VERSION_PATCH >= 793)
+#define AWS_KMS_PKCS11_HAVE_ML_DSA 1
+#endif
 
 #include "pkcs11_compat.h"
 #include "openssl_compat.h"
@@ -42,6 +55,16 @@ typedef struct _session {
 
     CK_MECHANISM_TYPE sign_mechanism;
     CK_RSA_PKCS_PSS_PARAMS pss_params;
+
+    /* Streaming sign-API buffer (C_SignUpdate -> C_SignFinal).
+     * For ML-DSA, pkcs11-provider uses the multi-part Sign API: C_SignInit
+     * followed by one or more C_SignUpdate calls, then C_SignFinal. We
+     * accumulate the message here and submit it to KMS in one Sign request
+     * at C_SignFinal (matching AWS KMS's RAW MessageType semantics).
+     */
+    CK_BYTE_PTR sign_buffer;
+    CK_ULONG sign_buffer_len;
+    CK_ULONG sign_buffer_cap;
 } CkSession;
 
 // PKCS#11 init state for this process. A second C_Initialize without an
@@ -405,6 +428,9 @@ CK_RV C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication,
     if (session == NULL) {
         return CKR_HOST_MEMORY;
     }
+    session->sign_buffer = NULL;
+    session->sign_buffer_len = 0;
+    session->sign_buffer_cap = 0;
     session->slot_id = slotID;
 
     *phSession = (CK_SESSION_HANDLE)session;
@@ -423,6 +449,7 @@ CK_RV C_CloseSession(CK_SESSION_HANDLE hSession) {
             it++;
         }
     }
+    if (session->sign_buffer != NULL) { free(session->sign_buffer); session->sign_buffer = NULL; }
     free(session);
     return CKR_OK;
 }
@@ -431,6 +458,7 @@ CK_RV C_CloseAllSessions(CK_SLOT_ID slotID) {
     for (auto it = active_sessions->begin(); it != active_sessions->end(); ) {
         CkSession *session = *it;
         if (session->slot_id == slotID) {
+            if (session->sign_buffer != NULL) { free(session->sign_buffer); session->sign_buffer = NULL; }
             free(session);
             active_sessions->erase(it);
         } else {
@@ -493,6 +521,26 @@ CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM
             return CKR_MECHANISM_INVALID;
         }
         break;
+#ifdef AWS_KMS_PKCS11_HAVE_ML_DSA
+    case CKM_ML_DSA:
+        // For the PQ mechanisms, PKCS#11 v3.2 expresses ulMin/MaxKeySize as the
+        // public-key size in bytes (per FIPS 204 Table 2), matching the ML-KEM
+        // convention in the spec rather than a security-strength figure.
+        switch(slot.GetKeySpec()) {
+        case Aws::KMS::Model::KeySpec::ML_DSA_44:
+            keySize = 1312;
+            break;
+        case Aws::KMS::Model::KeySpec::ML_DSA_65:
+            keySize = 1952;
+            break;
+        case Aws::KMS::Model::KeySpec::ML_DSA_87:
+            keySize = 2592;
+            break;
+        default:
+            return CKR_MECHANISM_INVALID;
+        }
+        break;
+#endif
     default:
        return CKR_MECHANISM_INVALID;
     }
@@ -506,11 +554,23 @@ CK_RV C_GetMechanismList(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList
     if (pulCount == NULL_PTR) {
         return CKR_ARGUMENTS_BAD;
     }
+#ifdef AWS_KMS_PKCS11_HAVE_ML_DSA
+    const CK_ULONG mech_count = 3;
+#else
+    const CK_ULONG mech_count = 2;
+#endif
     if (pMechanismList != NULL) {
+        if (*pulCount < mech_count) {
+            *pulCount = mech_count;
+            return CKR_BUFFER_TOO_SMALL;
+        }
         pMechanismList[0] = CKM_RSA_PKCS;
         pMechanismList[1] = CKM_ECDSA;
+#ifdef AWS_KMS_PKCS11_HAVE_ML_DSA
+        pMechanismList[2] = CKM_ML_DSA;
+#endif
     }
-    *pulCount = 2;
+    *pulCount = mech_count;
     return CKR_OK;
 }
 
@@ -695,16 +755,89 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJ
         memset(&session->pss_params, 0, sizeof(CK_RSA_PKCS_PSS_PARAMS));
     }
 
+    /* Reset any previously-accumulated streaming-sign buffer. */
+    if (session->sign_buffer != NULL) {
+        free(session->sign_buffer);
+        session->sign_buffer = NULL;
+    }
+    session->sign_buffer_len = 0;
+    session->sign_buffer_cap = 0;
+
     return CKR_OK;
 }
 
+/* Upper bound on bytes accumulated across C_SignUpdate calls. AWS KMS RAW
+ * signing tops out at 4096 bytes (the ML-DSA path), and the RSA/EC paths only
+ * ever sign a digest, so any larger stream can never yield a valid signature.
+ * Reject early instead of buffering unbounded data on the host. */
+#define SIGN_BUFFER_MAX 4096UL
+
 CK_RV C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_ULONG ulPartLen) {
+    CkSession *session = (CkSession*)hSession;
+    if (session == NULL) {
+        return CKR_SESSION_HANDLE_INVALID;
+    }
+    if (pPart == NULL_PTR && ulPartLen > 0) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    if (ulPartLen == 0) {
+        return CKR_OK;
+    }
+    /* Bound total accumulation (also guards the size arithmetic below from
+     * overflow: once ulPartLen <= SIGN_BUFFER_MAX, the subtraction can't wrap). */
+    if (ulPartLen > SIGN_BUFFER_MAX ||
+        session->sign_buffer_len > SIGN_BUFFER_MAX - ulPartLen) {
+        debug("C_SignUpdate: accumulated message exceeds %lu-byte limit",
+              (unsigned long)SIGN_BUFFER_MAX);
+        return CKR_DATA_LEN_RANGE;
+    }
+    /* Grow the buffer if needed. Double-and-add growth to amortize allocations. */
+    CK_ULONG needed = session->sign_buffer_len + ulPartLen;
+    if (needed > session->sign_buffer_cap) {
+        CK_ULONG new_cap = session->sign_buffer_cap ? session->sign_buffer_cap : 4096;
+        while (new_cap < needed) new_cap *= 2;
+        CK_BYTE_PTR new_buf = (CK_BYTE_PTR)realloc(session->sign_buffer, new_cap);
+        if (new_buf == NULL) {
+            debug("C_SignUpdate: realloc to %lu bytes failed", (unsigned long)new_cap);
+            return CKR_HOST_MEMORY;
+        }
+        session->sign_buffer = new_buf;
+        session->sign_buffer_cap = new_cap;
+    }
+    memcpy(session->sign_buffer + session->sign_buffer_len, pPart, ulPartLen);
+    session->sign_buffer_len += ulPartLen;
     return CKR_OK;
 }
 
 CK_RV C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen) {
-    *pulSignatureLen = 0;
-    return CKR_OK;
+    CkSession *session = (CkSession*)hSession;
+    if (session == NULL) {
+        return CKR_SESSION_HANDLE_INVALID;
+    }
+    if (pulSignatureLen == NULL_PTR) {
+        return CKR_ARGUMENTS_BAD;
+    }
+    /* Delegate to C_Sign with the accumulated buffer. C_Sign handles both
+     * the size-query case (pSignature == NULL) and the actual-sign case.
+     * Free the accumulated buffer only when we've actually delivered the
+     * signature, so that the two-call pattern (query size, then sign) works:
+     * the first call returns the size, the second call returns the signature
+     * and frees the buffer. */
+    /* C_Sign rejects a NULL pData, so for the zero-length case (no C_SignUpdate
+     * calls) pass a valid non-const pointer to an empty buffer rather than
+     * casting away const from a string literal. */
+    static CK_BYTE empty_msg[1] = { 0 };
+    CK_RV rv = C_Sign(hSession,
+                      session->sign_buffer ? session->sign_buffer : empty_msg,
+                      session->sign_buffer_len,
+                      pSignature, pulSignatureLen);
+    if (pSignature != NULL_PTR && rv == CKR_OK) {
+        free(session->sign_buffer);
+        session->sign_buffer = NULL;
+        session->sign_buffer_len = 0;
+        session->sign_buffer_cap = 0;
+    }
+    return rv;
 }
 
 static const unsigned char rsa_id_sha256[] = { 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20 };
@@ -747,21 +880,40 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
     const RSA* rsa;
     const unsigned char* pubkey_bytes = key_data.GetUnderlyingData();
     EVP_PKEY* pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
+    if (pkey == NULL) {
+        debug("d2i_PUBKEY returned NULL — public key DER parse failed");
+        return CKR_FUNCTION_FAILED;
+    }
 
+    // Detect key type. For ML-DSA (OpenSSL 3.5+) EVP_PKEY_base_id returns a
+    // dynamically-assigned NID, so we use EVP_PKEY_is_a() with the canonical
+    // algorithm name to identify the variant. Cache the determination in
+    // key_type using EVP_PKEY_RSA / EVP_PKEY_EC / a sentinel for ML-DSA.
     int key_type = EVP_PKEY_base_id(pkey);
-    switch (key_type) {
-        case EVP_PKEY_RSA:
-            rsa = EVP_PKEY_get0_RSA(pkey);
-            sig_size = BN_num_bytes(RSA_get0_n(rsa));
-            break;
-        case EVP_PKEY_EC:
-            ec_key = EVP_PKEY_get0_EC_KEY(pkey);
-            sig_size = ECDSA_size(ec_key);
-            break;
-        default:
-            EVP_PKEY_free(pkey);
-            return CKR_FUNCTION_FAILED;
-
+#ifdef AWS_KMS_PKCS11_HAVE_ML_DSA
+    bool is_mldsa = false;
+#endif
+    if (key_type == EVP_PKEY_RSA) {
+        rsa = EVP_PKEY_get0_RSA(pkey);
+        sig_size = BN_num_bytes(RSA_get0_n(rsa));
+    } else if (key_type == EVP_PKEY_EC) {
+        ec_key = EVP_PKEY_get0_EC_KEY(pkey);
+        sig_size = ECDSA_size(ec_key);
+#if defined(AWS_KMS_PKCS11_HAVE_ML_DSA) && OPENSSL_VERSION_NUMBER >= 0x30000000L
+    } else if (EVP_PKEY_is_a(pkey, "ML-DSA-44")) {
+        is_mldsa = true;
+        sig_size = 2420;  // FIPS 204 Table 1
+    } else if (EVP_PKEY_is_a(pkey, "ML-DSA-65")) {
+        is_mldsa = true;
+        sig_size = 3309;
+    } else if (EVP_PKEY_is_a(pkey, "ML-DSA-87")) {
+        is_mldsa = true;
+        sig_size = 4627;
+#endif
+    } else {
+        debug("Unsupported key type in C_Sign: base_id=%d", key_type);
+        EVP_PKEY_free(pkey);
+        return CKR_FUNCTION_FAILED;
     }
     EVP_PKEY_free(pkey);
     pkey = NULL;
@@ -818,6 +970,27 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
             req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
             req.SetMessageType(Aws::KMS::Model::MessageType::DIGEST);
             break;
+#ifdef AWS_KMS_PKCS11_HAVE_ML_DSA
+        case CKM_ML_DSA:
+            // ML-DSA signing via AWS KMS.
+            // AWS KMS Sign API accepts MessageType=RAW for messages up to 4096 bytes.
+            // For larger messages, EXTERNAL_MU pre-processing is required (FIPS 204 §6.2);
+            // not implemented here — callers should keep messages bounded.
+            if (!is_mldsa) {
+                debug("CKM_ML_DSA requested but key is not ML-DSA");
+                return CKR_KEY_TYPE_INCONSISTENT;
+            }
+            if (ulDataLen > 4096) {
+                debug("Message too large for CKM_ML_DSA RAW path: %lu bytes (max 4096); "
+                      "EXTERNAL_MU pre-processing not yet implemented",
+                      (unsigned long)ulDataLen);
+                return CKR_DATA_LEN_RANGE;
+            }
+            req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData, ulDataLen)));
+            req.SetMessageType(Aws::KMS::Model::MessageType::RAW);
+            req.SetSigningAlgorithm(Aws::KMS::Model::SigningAlgorithmSpec::ML_DSA_SHAKE_256);
+            break;
+#endif
         case CKM_RSA_PKCS:
             if (has_prefix(pData, ulDataLen, rsa_id_sha256, sizeof(rsa_id_sha256))) {
                 req.SetMessage(Aws::Utils::CryptoBuffer(Aws::Utils::ByteBuffer(pData + sizeof(rsa_id_sha256), ulDataLen - sizeof(rsa_id_sha256))));
@@ -860,6 +1033,8 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
     }
     Aws::KMS::Model::SignResult response = res.GetResult();
 
+    // ML-DSA signatures are raw FIPS 204 bytes, not DER-wrapped, so they take the
+    // memcpy path below (key_type is neither EVP_PKEY_RSA nor EVP_PKEY_EC).
     if (key_type == EVP_PKEY_EC) {
         const unsigned char* sigbytes = response.GetSignature().GetUnderlyingData();
         ECDSA_SIG* sig = d2i_ECDSA_SIG(NULL, &sigbytes, response.GetSignature().GetLength());
