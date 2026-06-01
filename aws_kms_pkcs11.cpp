@@ -6,6 +6,7 @@
 #include <json.h>
 
 #include <algorithm>
+#include <mutex>
 #include <vector>
 
 #include <aws/core/Aws.h>
@@ -43,7 +44,14 @@ typedef struct _session {
     CK_RSA_PKCS_PSS_PARAMS pss_params;
 } CkSession;
 
-static Aws::SDKOptions options;
+// PKCS#11 init state for this process. A second C_Initialize without an
+// intervening C_Finalize must return CKR_CRYPTOKI_ALREADY_INITIALIZED.
+static bool g_pkcs11_initialized = false;
+// The AWS SDK is process-global, is not idempotent / has no "is initialized"
+// query, and is not safely re-initializable (aws-sdk-cpp #1093, #2119, #2699).
+// Initialize it exactly once per process via std::call_once (thread-safe) and
+// intentionally never shut it down (#2464); see C_Finalize_Inner.
+static std::once_flag g_aws_init_once;
 static vector<AwsKmsSlot>* slots = NULL;
 static vector<CkSession*>* active_sessions = NULL;
 
@@ -111,6 +119,9 @@ static CK_RV load_config(json_object** config) {
 }
 
 CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
+    if (g_pkcs11_initialized) {
+        return CKR_CRYPTOKI_ALREADY_INITIALIZED;
+    }
     OsslDefaultCtxGuard::Init();
     OsslDefaultCtxGuard ctx_guard; // RAII: use a default OpenSSL context
 
@@ -127,8 +138,17 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
         }
     }
 
-    Aws::SDKOptions options;
-    Aws::InitAPI(options);
+    // Initialize the AWS SDK exactly once per process. cryptoOptions
+    // .initAndCleanupOpenSSL defaults to true, which makes the SDK init and
+    // later tear down OpenSSL itself; but OpenSSL is owned by the host
+    // (pkcs11-provider loads us into OpenSSL's process), so we must leave it
+    // alone, otherwise the SDK's OpenSSL teardown segfaults against OpenSSL's
+    // own atexit cleanup. We also never call ShutdownAPI; see C_Finalize_Inner.
+    std::call_once(g_aws_init_once, [] {
+        Aws::SDKOptions options;
+        options.cryptoOptions.initAndCleanupOpenSSL = false;
+        Aws::InitAPI(options);
+    });
 
     json_object* config = NULL;
     CK_RV res = load_config(&config);
@@ -246,6 +266,8 @@ CK_RV C_Initialize(CK_VOID_PTR pInitArgs) {
 
     if (result != CKR_OK) {
         C_Finalize(NULL_PTR);
+    } else {
+        g_pkcs11_initialized = true;
     }
     return result;
 }
@@ -273,8 +295,11 @@ static void C_Finalize_Inner() {
         active_sessions = NULL;
     }
 
-    Aws::SDKOptions options;
-    Aws::ShutdownAPI(options);
+    // Aws::ShutdownAPI() is intentionally NOT called. The SDK is process-global,
+    // is not safely re-initializable (aws-sdk-cpp #2119) and crashes when shut
+    // down from a teardown/atexit context (#2464) — which is exactly how a
+    // PKCS#11 provider loaded into OpenSSL gets finalized at process exit.
+    // Leaking the SDK's global state is harmless: the OS reclaims it on exit.
 }
 
 CK_RV C_Finalize(CK_VOID_PTR pReserved) {
@@ -283,6 +308,9 @@ CK_RV C_Finalize(CK_VOID_PTR pReserved) {
     // call Fini() here to ensure we do not currently hold the guard as it is freed.
     C_Finalize_Inner();
     OsslDefaultCtxGuard::Fini();
+    // PKCS#11 may be re-initialized after this; the AWS SDK is not torn down
+    // (see C_Finalize_Inner) and stays up for the life of the process.
+    g_pkcs11_initialized = false;
     return CKR_OK;
 }
 
