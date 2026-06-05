@@ -7,12 +7,12 @@ commands:
       - run:
           command: sudo apt-get update && sudo bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install build-essential gcc g++ cmake libcurl4-openssl-dev libssl-dev libopencryptoki-dev libjson-c-dev libp11-kit-dev'
       - restore_cache:
-          key: aws-sdk-cpp-1.11.511-{{ checksum "/etc/os-release" }}-{{arch}}
+          key: aws-sdk-cpp-1.11.822-{{ checksum "/etc/os-release" }}-{{arch}}
       - run:
           command: |
             if [[ ! -e ~/aws-sdk-cpp ]]; then
-                curl -o ~/aws-sdk-cpp.tar.gz -L https://github.com/aws/aws-sdk-cpp/archive/1.11.511.tar.gz
-                [[ "FASxC7+IysPIgmVndcl9r8JcCaocPH4DbOuX2dP+ryA=" == $(openssl dgst -sha256 -binary < ~/aws-sdk-cpp.tar.gz  | openssl enc -base64) ]] || exit 1
+                curl -o ~/aws-sdk-cpp.tar.gz -L https://github.com/aws/aws-sdk-cpp/archive/1.11.822.tar.gz
+                [[ "QfDZJezYGccxqTan3FWuAqBQG/INMJ+DqmokC7IOtQ4=" == $(openssl dgst -sha256 -binary < ~/aws-sdk-cpp.tar.gz  | openssl enc -base64) ]] || exit 1
                 mkdir ~/aws-sdk-cpp-src
                 tar -C ~/aws-sdk-cpp-src --strip-components=1 -zxf ~/aws-sdk-cpp.tar.gz
                 cd ~/aws-sdk-cpp-src && ./prefetch_crt_dependency.sh
@@ -20,7 +20,7 @@ commands:
                 cd ~/aws-sdk-cpp-src/sdk_build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="kms;acm-pca" -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/aws-sdk-cpp -DBUILD_SHARED_LIBS=OFF && make && make install
             fi
       - save_cache:
-          key: aws-sdk-cpp-1.11.511-{{ checksum "/etc/os-release" }}-{{arch}}
+          key: aws-sdk-cpp-1.11.822-{{ checksum "/etc/os-release" }}-{{arch}}
           paths:
             - ~/aws-sdk-cpp
       - run:
