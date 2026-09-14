@@ -877,6 +877,7 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
 
     size_t sig_size;
     const EC_KEY* ec_key;
+    int ec_coord_len = 0;
     const RSA* rsa;
     const unsigned char* pubkey_bytes = key_data.GetUnderlyingData();
     EVP_PKEY* pkey = d2i_PUBKEY(NULL, &pubkey_bytes, key_data.GetLength());
@@ -898,7 +899,13 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
         sig_size = BN_num_bytes(RSA_get0_n(rsa));
     } else if (key_type == EVP_PKEY_EC) {
         ec_key = EVP_PKEY_get0_EC_KEY(pkey);
-        sig_size = ECDSA_size(ec_key);
+        // P1363 (CKM_ECDSA) output is fixed-width r||s, each ceil(order_bits/8)
+        // bytes. Capture width while pkey/ec_key are valid; ECDSA_size() is the
+        // DER maximum and must NOT be reported as the raw P1363 length.
+        { const EC_GROUP* grp = EC_KEY_get0_group(ec_key);
+          ec_coord_len = grp ? (EC_GROUP_get_degree(grp) + 7) / 8 : 0; }
+        if (ec_coord_len <= 0) { EVP_PKEY_free(pkey); return CKR_FUNCTION_FAILED; }
+        sig_size = 2 * ec_coord_len;   // true P1363 length (132 for P-521)
 #if defined(AWS_KMS_PKCS11_HAVE_ML_DSA) && OPENSSL_VERSION_NUMBER >= 0x30000000L
     } else if (EVP_PKEY_is_a(pkey, "ML-DSA-44")) {
         is_mldsa = true;
@@ -1043,13 +1050,16 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, 
         }
         const BIGNUM* r = ECDSA_SIG_get0_r(sig);
         const BIGNUM* s = ECDSA_SIG_get0_s(sig);
-
-        if ((size_t)BN_num_bytes(r) + (size_t)BN_num_bytes(s) > sig_size) {
-            return CKR_FUNCTION_FAILED;
+        // Fixed-width, left-zero-padded r||s (P1363). BN_bn2bin wrote minimal-length
+        // integers -> short/misaligned signatures (130/131 vs 132 for P-521).
+        if ((size_t)(2 * ec_coord_len) > sig_size) {
+            ECDSA_SIG_free(sig); return CKR_FUNCTION_FAILED;
         }
-        int pos = BN_bn2bin(r, pSignature);
-        pos += BN_bn2bin(s, pSignature + pos);
-        *pulSignatureLen = pos;
+        if (BN_bn2binpad(r, pSignature, ec_coord_len) < 0 ||
+            BN_bn2binpad(s, pSignature + ec_coord_len, ec_coord_len) < 0) {
+            ECDSA_SIG_free(sig); return CKR_FUNCTION_FAILED;
+        }
+        *pulSignatureLen = 2 * ec_coord_len;
         ECDSA_SIG_free(sig);
     } else {
         if (response.GetSignature().GetLength() > sig_size) {
