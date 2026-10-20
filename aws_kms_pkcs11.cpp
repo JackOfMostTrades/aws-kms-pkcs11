@@ -727,13 +727,27 @@ CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession, CK_OBJECT_HANDLE hObject, 
         return CKR_OBJECT_HANDLE_INVALID;
     }
 
+    // PKCS#11 requires processing every attribute of the template, even after one that is invalid,
+    // sensitive, or too large for its buffer: those get CK_UNAVAILABLE_INFORMATION, and the call
+    // returns that error at the end. Callers like pkcs11-provider ask for optional attributes in
+    // the same call as the ones they need.
+    CK_RV ret = CKR_OK;
     for (CK_ULONG i = 0; i < ulCount; i++) {
         CK_RV res = getAttributeForObject(slot, hObject, pTemplate[i].type, pTemplate[i].pValue, &pTemplate[i].ulValueLen);
-        if (res != CKR_OK) {
-            return res;
+        switch (res) {
+            case CKR_OK:
+                break;
+            case CKR_ATTRIBUTE_SENSITIVE:
+            case CKR_ATTRIBUTE_TYPE_INVALID:
+            case CKR_BUFFER_TOO_SMALL:
+                pTemplate[i].ulValueLen = CK_UNAVAILABLE_INFORMATION;
+                ret = res;
+                break;
+            default:
+                return res;
         }
     }
-    return CKR_OK;
+    return ret;
 }
 
 CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hKey) {
